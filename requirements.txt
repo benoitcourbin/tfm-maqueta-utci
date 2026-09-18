@@ -4,6 +4,7 @@ rasterio
 shapely>=2.0
 triangle
 ijson
+mapbox_earcut
 geopandas
 pyogrio
 pyshp

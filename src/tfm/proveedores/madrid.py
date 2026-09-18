@@ -129,21 +129,34 @@ def epw_de(cfg, rutas):
     return encontrados[0]
 
 
-def descargar(url, destino, timeout=1800):
+def descargar(url, destino, timeout=1800, esperado=None):
     """Téléchargement en flux vers un .part, renommé à la fin.
 
     Une coupure laisse le .part : la fois suivante recommence au lieu de
     travailler sur un fichier tronqué.
+
+    `esperado` : 'zip' verifie la signature du fichier. Sans ce controle, une
+    page d'erreur HTML renvoyee en 200 est enregistree comme si c'etait
+    l'archive demandee (constate le 18/09 sur les Multipatch).
     """
     os.makedirs(os.path.dirname(destino), exist_ok=True)
     tmp = destino + '.part'
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
     with urllib.request.urlopen(req, timeout=timeout) as r, open(tmp, 'wb') as fh:
+        tipo = (r.headers.get('Content-Type') or '').lower()
         while True:
             trozo = r.read(1024 * 1024)
             if not trozo:
                 break
             fh.write(trozo)
+    if esperado == 'zip':
+        with open(tmp, 'rb') as fh:
+            firma = fh.read(4)
+        tam = os.path.getsize(tmp)
+        if firma[:2] != b'PK' or tam < 10000:
+            os.remove(tmp)
+            raise RuntimeError('la respuesta no es un ZIP (%d bytes, %s)'
+                               % (tam, tipo or 'sin content-type'))
     os.replace(tmp, destino)
     return destino
 
@@ -209,18 +222,29 @@ def distritos_en_bbox(bbox, rutas):
 
 
 def descargar_multipatch(codigo, nombre, destino):
-    """Essaie les graphies jusqu'a ce qu'une reponde. Retourne celle qui marche."""
+    """Essaie les graphies jusqu'a ce qu'une reponde AVEC un vrai ZIP.
+
+    Controle de sortie : il doit y avoir un .shp apres extraction. Sinon on
+    nettoie et on leve, plutot que de laisser croire que le district est la.
+    """
+    import glob
     import zipfile
-    ultimo = None
+    intentos = []
     for cand in candidatos_multipatch(codigo, nombre):
+        zip_tmp = destino + '/_%s.zip' % cand
         try:
-            zip_tmp = destino + '/_%s.zip' % cand
             os.makedirs(destino, exist_ok=True)
-            descargar(URL_MULTIPATCH % cand, zip_tmp)
+            descargar(URL_MULTIPATCH % cand, zip_tmp, esperado='zip')
             with zipfile.ZipFile(zip_tmp) as z:
                 z.extractall(destino)
             os.remove(zip_tmp)
+            if not glob.glob(destino + '/**/*.shp', recursive=True):
+                intentos.append('%s : ZIP sin .shp' % cand)
+                continue
             return cand
         except Exception as ex:
-            ultimo = '%s : %s' % (cand, ex)
-    raise RuntimeError('ninguna grafia del Multipatch responde (%s)' % ultimo)
+            intentos.append('%s : %s' % (cand, ex))
+            if os.path.exists(zip_tmp):
+                os.remove(zip_tmp)
+    raise RuntimeError('ninguna grafia responde con un Multipatch valido | '
+                       + ' | '.join(intentos))
