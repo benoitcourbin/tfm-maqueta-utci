@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+salidas_locales/
+*.tif
+*.geojson
+*_mesh.json

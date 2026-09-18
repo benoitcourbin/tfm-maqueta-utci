@@ -1,0 +1,9 @@
+numpy
+scipy
+rasterio
+shapely>=2.0
+triangle
+geopandas
+pyogrio
+pyshp
+pandas

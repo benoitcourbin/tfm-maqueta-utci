@@ -1,0 +1,23 @@
+{
+  "zona": "lavapies",
+  "ciudad": "madrid",
+  "proveedor": "madrid",
+  "crs": "EPSG:25830",
+  "bbox": [439574.77, 4472645.06, 440779.55, 4473848.43],
+  "buffer_m": 300,
+  "origen_local": [440177.20, 4473246.72],
+  "eap": {"lon": -3.70540688, "lat": 40.40697076},
+  "z_mode": "absolute",
+  "distritos": ["01.CENTRO_3D", "02.ARGANZUELA_3D"],
+  "cod_municipio": "28900",
+  "epw": "Lavapies_2023_ERA5.epw",
+  "capas": ["topo", "edificios", "viario", "arbolado", "lod1"],
+  "suelo": {
+    "umbral_mdt_m": 5.0,
+    "ventana_mdt_m": 21,
+    "h_bordillo_m": 0.15,
+    "simplificar_m": 0.25,
+    "celda_m": 50.0,
+    "paso_interior_m": 10.0
+  }
+}
