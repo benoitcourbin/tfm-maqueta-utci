@@ -28,6 +28,14 @@ def _celdas(ruta_nb):
     return [''.join(c['source']) for c in nb['cells'] if c['cell_type'] == 'code']
 
 
+def _distritos(cfg):
+    """Noms de dossiers Multipatch : ceux du JSON, sinon ceux détectés."""
+    if cfg.get('distritos'):
+        return list(cfg['distritos'])
+    return ['%s.%s_3D' % (c, n.upper().replace(' ', '_'))
+            for c, n in (cfg.get('distritos_detectados') or [])]
+
+
 def preparar(ruta_nb, cfg, rutas):
     """Retourne l'espace de noms du cuaderno, configuré pour cette zone."""
     celdas = _celdas(ruta_nb)
@@ -47,7 +55,7 @@ def preparar(ruta_nb, cfg, rutas):
         'DIR_FUENTES': rutas.fuentes,
         'OUT_DIR': rutas.maqueta,
         'CAPAS': list(cfg.get('capas', [])),
-        'DISTRITOS': list(cfg.get('distritos', [])),
+        'DISTRITOS': _distritos(cfg),
         'COD_MUNICIPIO': cfg.get('cod_municipio', '28900'),
     })
     os.makedirs(rutas.maqueta, exist_ok=True)

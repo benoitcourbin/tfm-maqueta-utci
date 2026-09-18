@@ -47,26 +47,71 @@ def main():
     print('Zona %s · raíz %s' % (cfg['zona'], rutas.raiz))
 
     # ------------------------------------------------------------ 1. fuentes
+    def obtener(f):
+        if prov.existe(f):
+            return 'ya presente'
+        if args.sin_descargas or not f.get('auto') or not f.get('url'):
+            raise RuntimeError('falta y no se descarga automáticamente')
+        destino = f['ruta'] if not f.get('carpeta') \
+            else f['ruta'] + '/' + os.path.basename(f['url'])
+        prov.descargar(f['url'], destino)
+        if destino.endswith('.zip'):
+            import zipfile
+            with zipfile.ZipFile(destino) as z:
+                z.extractall(os.path.dirname(destino))
+            os.remove(destino)
+        return 'descargado'
+
     for f in prov.fuentes(cfg, rutas):
+        if f['clave'].startswith('multipatch_'):
+            continue                      # se resuelven tras detectar distritos
         nombre = 'fuente:' + f['clave']
+        ej.paso(nombre, lambda f=f: obtener(f), remedio=f['remedio'],
+                omitir=not (activo(nombre) or activo('fuentes')))
 
-        def obtener(f=f):
-            if prov.existe(f):
+    # --------------------------------------------- 1-bis. distritos y arbolado
+    # La configuración de una zona se reduce a EAP + bbox : los distritos se
+    # deducen de la bbox, y el arbolado se recorta del inventario de la ciudad.
+    if not cfg.get('distritos') and hasattr(prov, 'distritos_en_bbox'):
+        def detectar():
+            d = prov.distritos_en_bbox(cfg['bbox_contexto'], rutas)
+            cfg['distritos_detectados'] = d
+            print('   distritos en la bbox : %s'
+                  % ', '.join('%s %s' % (c, n) for c, n in d))
+            return d
+        ej.paso('distritos:detectar', detectar, omitir=not (activo('distritos')
+                or activo('fuentes')), remedio=(
+            'Sin la capa de distritos no se puede deducir qué Multipatch bajar. '
+            'Alternativa: escribir "distritos": ["01.CENTRO_3D", …] en '
+            'config/zonas/%s.json.' % cfg['zona']))
+
+    for cod, nom in (cfg.get('distritos_detectados') or []):
+        nombre = 'multipatch:%s' % nom
+
+        def bajar(cod=cod, nom=nom):
+            destino = rutas.modelo + '/%s.%s_3D' % (cod, nom.upper().replace(' ', '_'))
+            if os.path.isdir(destino) and os.listdir(destino):
                 return 'ya presente'
-            if args.sin_descargas or not f.get('auto') or not f.get('url'):
+            if args.sin_descargas:
                 raise RuntimeError('falta y no se descarga automáticamente')
-            destino = f['ruta'] if not f.get('carpeta') \
-                else f['ruta'] + '/' + os.path.basename(f['url'])
-            prov.descargar(f['url'], destino)
-            if destino.endswith('.zip'):
-                import zipfile
-                with zipfile.ZipFile(destino) as z:
-                    z.extractall(os.path.dirname(destino))
-                os.remove(destino)
-            return 'descargado'
+            return prov.descargar_multipatch(cod, nom, destino)
 
-        ej.paso(nombre, obtener, remedio=f['remedio'],
-                omitir=not activo(nombre) and not activo('fuentes'))
+        ej.paso(nombre, bajar, omitir=not (activo(nombre) or activo('fuentes')),
+                remedio=('Bajar a mano el Multipatch del distrito %s %s desde el '
+                         'Geoportal (3D_EDIFICACIONES_CONSTRUCCIONES/MULTIPATCH) '
+                         'y descomprimirlo en `%s`. [MAD-01]'
+                         % (cod, nom, rutas.modelo)))
+
+    def recortar_arbolado():
+        from tfm.pasos import arbolado as _arb
+        return _arb.recortar(cfg, rutas)
+
+    ej.paso('arbolado:recorte', recortar_arbolado,
+            omitir=not (activo('arbolado:recorte') or activo('fuentes')),
+            salidas=[rutas.fuentes + '/Arbolado/arboles_%s_clean.csv' % cfg['zona']],
+            remedio=('Dejar el inventario municipal de arbolado de TODA la ciudad '
+                     '(CSV o GeoJSON) en `%s/Arbolado/`. La cadena lo recorta sola '
+                     'a la bbox de cada zona.' % rutas.fuentes))
 
     # -------------------------------------------------------------- 2. capas
     cuaderno = args.cuaderno or (rutas.modelo +

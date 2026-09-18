@@ -3,6 +3,7 @@ scipy
 rasterio
 shapely>=2.0
 triangle
+ijson
 geopandas
 pyogrio
 pyshp

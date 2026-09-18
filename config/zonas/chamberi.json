@@ -1,0 +1,40 @@
+{
+  "zona": "chamberi",
+  "ciudad": "madrid",
+  "proveedor": "madrid",
+  "crs": "EPSG:25830",
+  "bbox": [
+    439853.2,
+    4475558.74,
+    441053.2,
+    4476758.74
+  ],
+  "buffer_m": 300,
+  "origen_local": [
+    440453.2,
+    4476158.74
+  ],
+  "eap": {
+    "lon": -3.70206,
+    "lat": 40.43394
+  },
+  "z_mode": "absolute",
+  "distritos": null,
+  "cod_municipio": "28900",
+  "epw": "Lavapies_2023_ERA5.epw",
+  "capas": [
+    "topo",
+    "edificios",
+    "viario",
+    "arbolado",
+    "lod1"
+  ],
+  "suelo": {
+    "umbral_mdt_m": 5.0,
+    "ventana_mdt_m": 21,
+    "h_bordillo_m": 0.15,
+    "simplificar_m": 0.25,
+    "celda_m": 50.0,
+    "paso_interior_m": 10.0
+  }
+}
