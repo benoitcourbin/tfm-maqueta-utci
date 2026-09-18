@@ -69,6 +69,11 @@ def main():
         ej.paso(nombre, lambda f=f: obtener(f), remedio=f['remedio'],
                 omitir=not (activo(nombre) or activo('fuentes')))
 
+    if hasattr(prov, 'epw_de'):
+        cfg['epw_ruta'] = prov.epw_de(cfg, rutas)
+        if cfg.get('epw_ruta'):
+            print('   EPW : %s' % os.path.basename(cfg['epw_ruta']))
+
     # --------------------------------------------- 1-bis. distritos y arbolado
     # La configuración de una zona se reduce a EAP + bbox : los distritos se
     # deducen de la bbox, y el arbolado se recorta del inventario de la ciudad.

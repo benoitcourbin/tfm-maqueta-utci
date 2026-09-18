@@ -77,11 +77,20 @@ def fuentes(cfg, rutas):
                      '(X/Y en EPSG:25830 o longitud/latitud), altura_total_m, '
                      'h_inicio_follaje_m, forma_copa. Sin él, la capa arbolado '
                      'se omite.' % rutas.fuentes)},
-        {'clave': 'epw', 'ruta': rutas.fuentes + '/EPW/' + cfg['epw'],
-         'url': None, 'auto': False,
-         'remedio': ('Generar el EPW con `generar_epw_2023.py` (ERA5) y dejarlo en '
-                     '`%s/EPW/`. Hace falta sólo para la simulación Ladybug, no '
-                     'para la maqueta.' % rutas.fuentes)},
+        # Un EPW sirve para toda la ciudad : basta con que haya UNO en la carpeta.
+        # `cfg['epw']` es sólo una preferencia, no una obligación.
+        # On cherche dans tout FUENTES : l'ERA5 du TFM est a la racine, les TMYx
+        # dans EPW/. Peu importe ou il est, du moment qu'il y en a un.
+        {'clave': 'epw', 'ruta': rutas.fuentes, 'carpeta': True,
+         'patron': '*.epw', 'url': None, 'auto': False,
+         'remedio': ('Dejar un fichero .epw en `%s/EPW/` (subcarpetas incluidas). '
+                     'Dos vías: (a) TMYx de la estación más cercana, descargable '
+                     'sin cuenta desde climate.onebuilding.org [LB-04] — año tipo, '
+                     'no un año concreto; (b) ERA5 del año estudiado con '
+                     '`generar_epw_2023.py`, que necesita una clave gratuita del '
+                     'Copernicus CDS. Para comparar con SOLWEIG hace falta la vía '
+                     '(b): SOLWEIG corre sobre ERA5. Sólo afecta a la simulación, '
+                     'no a la maqueta.' % rutas.fuentes)},
     ]
     for d in cfg.get('distritos') or []:
         F.append({'clave': 'multipatch_' + d,
@@ -94,10 +103,30 @@ def fuentes(cfg, rutas):
 
 
 def existe(f):
-    """Un dossier compte comme présent s'il contient au moins un fichier."""
+    """Présence d'une source.
+
+    `patron` : il suffit qu'un fichier correspondant existe quelque part sous le
+    dossier — un EPW vaut pour toute la ville, quel que soit son nom.
+    """
+    if f.get('patron'):
+        import glob
+        return bool(glob.glob(f['ruta'] + '/**/' + f['patron'], recursive=True))
     if f.get('carpeta'):
         return os.path.isdir(f['ruta']) and bool(os.listdir(f['ruta']))
     return os.path.exists(f['ruta'])
+
+
+def epw_de(cfg, rutas):
+    """Chemin de l'EPW à utiliser : celui du JSON s'il est là, sinon le premier."""
+    import glob
+    encontrados = sorted(glob.glob(rutas.fuentes + '/**/*.epw', recursive=True))
+    if not encontrados:
+        return None
+    pref = cfg.get('epw')
+    for e in encontrados:
+        if pref and os.path.basename(e) == pref:
+            return e
+    return encontrados[0]
 
 
 def descargar(url, destino, timeout=1800):

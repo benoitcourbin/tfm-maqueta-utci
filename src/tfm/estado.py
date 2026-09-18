@@ -95,6 +95,11 @@ class Ejecucion(object):
                                         'huella': huella(r)}
             else:
                 datos['ficheros'][k] = None
+        # L'EPW ne vit pas dans la carpeta de la zone : on note celui retenu.
+        if cfg.get('epw_ruta') and os.path.exists(cfg['epw_ruta']):
+            datos['ficheros']['epw'] = {'ruta': cfg['epw_ruta'].replace('/', '\\'),
+                                        'bytes': os.path.getsize(cfg['epw_ruta']),
+                                        'huella': huella(cfg['epw_ruta'])}
         with open(self.rutas.manifiesto, 'w', encoding='utf-8') as fh:
             json.dump(datos, fh, ensure_ascii=False, indent=2)
         return datos
