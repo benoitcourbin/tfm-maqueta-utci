@@ -1,70 +1,85 @@
 # -*- coding: utf-8 -*-
 """
 gh_load_arboles.py — GHPython (Rhino 8 / Python 3, ScriptEditor)
-TFM UTCI Lavapies — chargement de arbolado_lavapies_mesh.json
+TFM UTCI Lavapies — carga de arbolado_lavapies_mesh.json
 
-ENTREES DU COMPOSANT : 2 seulement
-    path  (List, str)  chemin vers arbolado_lavapies_mesh.json
-    eap   (Item)       Earth Anchor Point : texte Heron, point lon/lat ou point UTM
+ENTRADAS DEL COMPONENTE : 2 solamente
+    path  (List, str)  ruta hacia arbolado_lavapies_mesh.json
+    eap   (Item)       Earth Anchor Point : texto Heron, punto lon/lat o punto UTM
 
-SORTIES : mesh (List) · clase (List) · keys (Tree) · values (Tree) · info (str)
+SALIDAS : mesh (List) · clase (List) · keys (Tree) · values (Tree) · info (str)
 
-STRUCTURE — strictement celle de gh_load_edificios.py et gh_load_viario.py,
-qui passent dans Elefront. NE PAS EN CHANGER.
-    mesh    liste plate de 7 836 mailles, ordre copa, tronco, copa, tronco...
-    clase   liste plate de 7 836 textes, 'copa' ou 'tronco', MEME ordre
-    keys    arbre {0}, {1}, ... une branche par maille
+ESTRUCTURA — estrictamente la de gh_load_edificios.py y gh_load_viario.py,
+que pasan por Elefront. NO CAMBIARLA.
+    mesh    lista plana de 7 836 mallas, orden copa, tronco, copa, tronco...
+    clase   lista plana de 7 836 textos, 'copa' o 'tronco', MISMO orden
+    keys    arbol {0}, {1}, ... una rama por malla
     values  idem
 
-COLORER PAR PARTIE — brancher directement 'clase' :
+COLOREAR POR PARTE — conectar directamente 'clase' :
     clase -> Member Index (Set = Merge('copa','tronco')) -> Index
-          -> List Item sur Merge(couleur_copa, couleur_tronco) -> Object Colour
-Aucun Graft ni Flatten a ajouter : les chemins sortent deja alignes.
+          -> List Item sobre Merge(color_copa, color_tronco) -> Object Colour
+No hay que anadir ningun Graft ni Flatten : los caminos salen ya alineados.
 
-VOIE LEGERE — si les attributs n'ont pas besoin d'etre bakes dans le .3dm,
-ne pas brancher keys/values sur Elefront : Layer + Object Colour suffisent, et
-la definition devient beaucoup plus rapide. Les attributs restent dans le CSV.
+VIA LIGERA — si los atributos no necesitan bakearse en el .3dm,
+no conectar keys/values a Elefront : Layer + Object Colour bastan, y
+la definicion resulta mucho mas rapida. Los atributos siguen en el CSV.
 
-COLORER PAR PARTIE — brancher directement 'clase' :
+COLOREAR POR PARTE — conectar directamente 'clase' :
     clase -> Member Index (Set = Merge('copa','tronco')) -> Index
-          -> List Item sur Merge(couleur_copa, couleur_tronco) -> Object Colour
-Plus besoin de Create Set ni de List Item sur les cles : 5 composants en moins.
+          -> List Item sobre Merge(color_copa, color_tronco) -> Object Colour
+Ya no hacen falta Create Set ni List Item sobre las claves : 5 componentes menos.
 
-AGRUPAR_POR_ARBOL = True donne a la place un arbre {i} de 2 elements par arbre
-(copa en indice 0) et keys/values en {i;j}. Utile pour raisonner par sujet, mais
-les chemins ne coincident plus : NE PAS alimenter Elefront avec, il apparie des
-topologies incompatibles et la definition se bloque.
+AGRUPAR_POR_ARBOL = True da en su lugar un arbol {i} de 2 elementos por arbol
+(copa en indice 0) y keys/values en {i;j}. Util para razonar por sujeto, pero
+los caminos ya no coinciden : NO alimentar Elefront con ello, empareja
+topologias incompatibles y la definicion se bloquea.
 
-Le fichier contient 2 objets par arbre : la copa et le tronco.
-  copa   -> normales de SOMMET : surface courbe, rendu lisse
-  tronco -> normales de FACE   : prisme a 6 pans, aretes nettes
-C'est le seul composant ou les deux modes coexistent, d'ou le traitement par
-'clase' plutot qu'un reglage global.
+El fichero contiene 2 objetos por arbol : la copa y el tronco.
+  copa   -> normales de VERTICE : superficie curva, render suave
+  tronco -> normales de CARA    : prisma de 6 caras, aristas netas
+Es el unico componente donde coexisten los dos modos, de ahi el tratamiento por
+'clase' en vez de un ajuste global.
 
-Diametre de houppier : mesure sur le CHM (MDS 2023 [MAD-03] − MDT [MAD-10]),
-masque par les emprises baties, segmente par ligne de partage des eaux amorcee
-sur la position des arbres. Les arbres non segmentables reprennent
-D = R_forme x h_copa, avec R calibre sur le quartier.
-Methode : DOCS/METODOLOGIA_copa_arboles_CHM.md § 3.6
-Inventaire : [SOURCE: MAD-05] · cotes de base : [SOURCE: MAD-10]
+Diametro de copa : medido sobre el CHM (MDS 2023 [MAD-03] − MDT [MAD-10]),
+enmascarado por las huellas edificadas, segmentado por linea divisoria de aguas
+iniciada en la posicion de los arboles. Los arboles no segmentables retoman
+D = R_forma x h_copa, con R calibrado sobre el barrio.
+Metodo : DOCS/METODOLOGIA_copa_arboles_CHM.md § 3.6
+Inventario : [SOURCE: MAD-05] · cotas de base : [SOURCE: MAD-10]
 
 API Rhino : Mesh.Vertices.Add / Faces.AddFace / Normals.ComputeNormals /
 Normals.Clear / FaceNormals.ComputeFaceNormals / Compact [SOURCE: GH-01]
 """
 
-# ============================ REGLAGES ======================================
-ACTIVO = True     # False : ne charge rien, la geometrie bakee reste en place.
-CLASES = ('copa', 'tronco')   # ('copa',) seul pour alimenter Ladybug :
-                              # les troncs ne portent quasiment aucune ombre
-                              # et pesent 23 508 faces sur 140 532.
-AGRUPAR_POR_ARBOL = False     # False (defaut) : un objet par branche -> Elefront.
-                              # True : une branche par arbre, copa puis tronco,
-                              # keys/values en {i;j}. Incompatible avec Elefront.
-Z_REF  = 0.0      # cote a retrancher a Z. 0 = altitude absolue conservee.
+# ============================ AJUSTES =======================================
+ACTIVO = True     # False : no carga nada, la geometria bakeada sigue en su sitio.
+CLASES = ('copa', 'tronco')   # ('copa',) solo para alimentar Ladybug :
+                              # los troncos casi no proyectan ninguna sombra
+                              # y pesan 23 508 caras sobre 140 532.
+AGRUPAR_POR_ARBOL = False     # False (defecto) : un objeto por rama -> Elefront.
+                              # True : una rama por arbol, copa luego tronco,
+                              # keys/values en {i;j}. Incompatible con Elefront.
+Z_REF  = 0.0      # cota a restar de Z. 0 = altitud absoluta conservada.
 
-# Ordre a l'interieur d'une branche. Sert aussi de cle de tri : la copa d'abord.
+# Orden dentro de una rama. Sirve tambien de clave de orden : la copa primero.
 ORDEN_PARTES = ('copa', 'tronco')
 # ============================================================================
+
+# --------------------------- CLAVES RETENIDAS -------------------------------
+# Lista blanca de atributos escritos en el .3dm. [] = todas.
+# Lo que no esta aqui sigue en el CSV de la capa, unible por el id.
+# Se conservan las claves que PILOTAN algo en Grasshopper: v5 lee las capas
+# con Reference by Layer, que devuelve geometria Y atributos. Sin ellas no
+# se puede agrupar por epoca (albedo de fachada) ni por pavimento.
+# Motivo: cada clave x objeto es una escritura de user text; 9 296 objetos x
+# 23 claves tumbaban Rhino (trampa §7.10).
+CLAVES = [
+    'id',
+    'clase',
+]
+# ----------------------------------------------------------------------------
+
 
 import json, os, re, math
 import Rhino.Geometry as rg
@@ -84,7 +99,7 @@ def aviso(t):
 
 
 def latlon_a_utm30(lat, lon):
-    """Transverse Mercator zone 30N, GRS80 (EPSG:25830)."""
+    """Transverse Mercator zona 30N, GRS80 (EPSG:25830)."""
     a, f = 6378137.0, 1.0 / 298.257222101
     e2 = f * (2 - f); ep2 = e2 / (1 - e2)
     k0, lon0, FE = 0.9996, math.radians(-3.0), 500000.0
@@ -110,38 +125,43 @@ def resolver_eap(obj):
         lat = re.search(r'Lat\w*\s*[:=]\s*(-?\d+\.?\d*)', obj, re.I)
         if lon and lat:
             e, n = latlon_a_utm30(float(lat.group(1)), float(lon.group(1)))
-            linea('EAP (texte Heron) -> UTM %.2f %.2f' % (e, n)); return e, n
-        aviso('EAP texte non interpretable : %s' % obj); return None
+            linea('EAP (texto Heron) -> UTM %.2f %.2f' % (e, n)); return e, n
+        aviso('EAP en texto no interpretable : %s' % obj); return None
     try:
         x, y = float(obj.X), float(obj.Y)
     except Exception:
-        aviso('type EAP non supporte : %s' % type(obj)); return None
+        aviso('tipo de EAP no admitido : %s' % type(obj)); return None
     if abs(x) <= 180.0 and abs(y) <= 90.0:
         e, n = latlon_a_utm30(y, x)
-        linea('EAP (point lon/lat) -> UTM %.2f %.2f' % (e, n)); return e, n
-    linea('EAP (point UTM) %.2f %.2f' % (x, y)); return x, y
+        linea('EAP (punto lon/lat) -> UTM %.2f %.2f' % (e, n)); return e, n
+    linea('EAP (punto UTM) %.2f %.2f' % (x, y)); return x, y
 
 
-mesh = []            # liste plate, comme edificios et viario
-clase = []           # liste plate alignee sur mesh, 'copa' ou 'tronco'
+mesh = []            # lista plana, como edificios y viario
+clase = []           # lista plana alineada con mesh, 'copa' o 'tronco'
 keys = DataTree[object]()
 values = DataTree[object]()
-_bruto = []          # [(id_arbol, clase, malla, attr)] avant regroupement
+_bruto = []          # [(id_arbol, clase, malla, attr)] antes del agrupamiento
 n_desc = n_filtrado = 0
 
 if not ACTIVO:
     linea('ACTIVO = False : nada cargado. La geometria bakeada sigue en las capas.')
     _paths = []
+elif not _paths:
+    aviso('el puerto path esta vacio : nada que cargar. '
+          'Conectar la salida correspondiente de gh_cache.py '
+          '(y comprobar su salida info).')
+
 
 _eap_utm = resolver_eap(_eap) if ACTIVO else None
 
 for ruta in _paths:
     if not ruta or not os.path.exists(str(ruta)):
-        aviso('chemin inexistant : %s' % ruta); continue
+        aviso('ruta inexistente : %s' % ruta); continue
     with open(str(ruta), 'r', encoding='utf-8') as fh:
         datos = json.load(fh)
     if 'objetos' not in datos:
-        aviso('%s : cle "objetos" absente' % os.path.basename(str(ruta))); continue
+        aviso('%s : falta la clave "objetos"' % os.path.basename(str(ruta))); continue
 
     meta = datos.get('meta', {})
     dx = float(meta.get('dx', 0.0) or 0.0)
@@ -152,18 +172,18 @@ for ruta in _paths:
     else:
         ox = oy = oz = 0.0
         if ACTIVO:
-            aviso('sans EAP : geometrie laissee en UTM absolu.')
+            aviso('sin EAP : geometria dejada en UTM absoluto.')
 
     objetos = datos.get('objetos', [])
-    linea('%s : %d objets | %s arboles | copa=%s'
+    linea('%s : %d objetos | %s arboles | copa=%s'
           % (os.path.basename(str(ruta)), len(objetos),
              meta.get('n_arboles'), meta.get('metodo_copa')))
     if meta.get('fuente_mds'):
         linea('   fuente del CHM : %s' % meta['fuente_mds'])
 
     for o in objetos:
-        cl_obj = o.get('clase') or '?'      # variable locale : NE PAS nommer
-        if cl_obj not in CLASES:            # 'clase', qui est une sortie
+        cl_obj = o.get('clase') or '?'      # variable local : NO llamarla
+        if cl_obj not in CLASES:            # 'clase', que es una salida
             n_filtrado += 1; continue
 
         m = rg.Mesh(); va = m.Vertices
@@ -174,9 +194,9 @@ for ruta in _paths:
             if len(f) == 3:   fa.AddFace(f[0], f[1], f[2])
             elif len(f) == 4: fa.AddFace(f[0], f[1], f[2], f[3])
 
-        # copa : ellipsoide, cone ou colonne -> surface courbe, normales de
-        # sommet, sinon le houppier apparait comme un polyedre grossier.
-        # tronco : prisme a 6 pans -> normales de face, aretes nettes.
+        # copa : elipsoide, cono o columna -> superficie curva, normales de
+        # vertice, si no la copa aparece como un poliedro tosco.
+        # tronco : prisma de 6 caras -> normales de cara, aristas netas.
         if cl_obj == 'copa':
             m.Normals.ComputeNormals()
         else:
@@ -190,17 +210,17 @@ for ruta in _paths:
         attr = dict(o.get('attr') or {})
         attr.setdefault('id', o.get('id'))
         attr.setdefault('clase', cl_obj)
-        # id_arbol relie la copa et le tronco d'un meme sujet. Repli sur l'id
-        # textuel 'ARB_00042_copa' si l'attribut manque.
+        # id_arbol une la copa y el tronco de un mismo sujeto. Repliegue sobre
+        # el id textual 'ARB_00042_copa' si falta el atributo.
         ida = attr.get('id_arbol')
         if ida is None:
             m_id = re.search(r'ARB_(\d+)', str(o.get('id') or ''))
             ida = int(m_id.group(1)) if m_id else len(_bruto)
         _bruto.append((int(ida), cl_obj, m, attr))
 
-# ------------------------------------------------ regroupement par arbre
+# ------------------------------------------------ agrupamiento por arbol
 def orden(t):
-    """Cle de tri : par id d'arbre, puis copa avant tronco."""
+    """Clave de orden : por id de arbol, luego copa antes que tronco."""
     try:
         j = ORDEN_PARTES.index(t[1])
     except ValueError:
@@ -221,6 +241,8 @@ if AGRUPAR_POR_ARBOL:
         arbol_mesh.Add(m, GH_Path(rama_i))
         hoja = GH_Path(rama_i, j)
         for k in sorted(attr.keys()):
+            if CLAVES and k not in CLAVES:
+                continue
             keys.Add(str(k), hoja)
             values.Add('' if attr[k] is None else str(attr[k]), hoja)
         j += 1
@@ -230,11 +252,13 @@ if AGRUPAR_POR_ARBOL:
     mesh = arbol_mesh
     n_arboles = rama_i + 1
 else:
-    # Liste plate + un jeu d'attributs par branche : structure identique a
-    # celle des edificios et du viario, qui bakent sans probleme.
+    # Lista plana + un juego de atributos por rama : estructura identica a
+    # la de los edificios y del viario, que bakean sin problema.
     for i, (ida, cl, m, attr) in enumerate(_bruto):
         rama = GH_Path(i)
         for k in sorted(attr.keys()):
+            if CLAVES and k not in CLAVES:
+                continue
             keys.Add(str(k), rama)
             values.Add('' if attr[k] is None else str(attr[k]), rama)
         mesh.append(m)

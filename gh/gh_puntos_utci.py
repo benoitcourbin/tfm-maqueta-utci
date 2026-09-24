@@ -1,57 +1,57 @@
 # -*- coding: utf-8 -*-
 """
 gh_puntos_utci.py — GHPython (Rhino 8 / Python 3, ScriptEditor)
-TFM UTCI Lavapies — semis des capteurs sur les tramos SOLWEIG
+TFM UTCI Lavapies — sembrado de los sensores sobre los tramos SOLWEIG
 
-Remplace le composant "Curve Middle" de la chaine ML_UTCI. Se branche apres
-Drape_CurvesOnMesh et avant le Move (Unit Z x 1.1).
+Sustituye al componente "Curve Middle" de la cadena ML_UTCI. Se conecta despues
+de Drape_CurvesOnMesh y antes del Move (Unit Z x 1.1).
 
-ENTREES DU COMPOSANT : 2
-    curvas  (List, Curve)  les tramos drapes sur la topo
-    ids     (List, str)    ID_Segmento, MEME ordre que curvas
+ENTRADAS DEL COMPONENTE : 2
+    curvas  (List, Curve)  los tramos drapeados sobre la topografia
+    ids     (List, str)    ID_Segmento, MISMO orden que curvas
 
-SORTIES : pts · id_seg · pt_medio · id_medio · n_pts · info
-    pts       capteurs, liste plate
-    id_seg    ID_Segmento repete une fois par capteur, aligne sur pts
-              -> regroupement aval par simple Member Index / Create Set
-    pt_medio  UN point par tramo, en son milieu. Liste plate.
-              C'est le porteur de la moyenne des n capteurs du tramo, et
-              le marqueur clicable dans Rhino.
-    id_medio  ID_Segmento, aligne sur pt_medio
-    n_pts     nombre de capteurs par tramo, aligne sur curvas
+SALIDAS : pts · id_seg · pt_medio · id_medio · n_pts · info
+    pts       sensores, lista plana
+    id_seg    ID_Segmento repetido una vez por sensor, alineado con pts
+              -> agrupacion aguas abajo con un simple Member Index / Create Set
+    pt_medio  UN punto por tramo, en su mitad. Lista plana.
+              Es el portador de la media de los n sensores del tramo, y
+              el marcador clicable en Rhino.
+    id_medio  ID_Segmento, alineado con pt_medio
+    n_pts     numero de sensores por tramo, alineado con curvas
 
-pt_medio et pts sont DEUX SORTIES DISTINCTES, meme quand elles coincident.
-Sur les 851 tramos de moins de 25 m le capteur unique tombe exactement au
-milieu : si les deux etaient bakes sur le meme calque, on ne saurait plus
-lequel on clique. Bakez-les sur deux calques separes.
+pt_medio y pts son DOS SALIDAS DISTINTAS, incluso cuando coinciden.
+En los 851 tramos de menos de 25 m el sensor unico cae exactamente en la
+mitad : si los dos se bakearan en la misma capa, ya no se sabria cual se
+clica. Bakearlos en dos capas separadas.
 
-REGLE DE SEMIS
+REGLA DE SEMBRADO
     n = max(1, round(L / PASO_M))
-    Les points sont places aux fractions de longueur d'arc (j + 0,5) / n,
-    c'est-a-dire au MILIEU de chaque sous-tramo, pas a ses extremites.
-    Deux consequences :
-      - pour n = 1 le point tombe exactement au milieu du tramo : le
-        comportement de Curve Middle est conserve pour les tramos courts ;
-      - la moyenne arithmetique des n points est la regle du point median
-        appliquee a l'integrale de ligne. L'operateur d'agregation n'est plus
-        un choix a defendre, il decoule de la geometrie du semis.
-    Aucun point ne tombe sur un noeud de rue, ou deux tramos se rejoignent et
-    ou la valeur serait comptee deux fois.
+    Los puntos se colocan en las fracciones de longitud de arco (j + 0,5) / n,
+    es decir en la MITAD de cada sub-tramo, no en sus extremos.
+    Dos consecuencias :
+      - para n = 1 el punto cae exactamente en la mitad del tramo : el
+        comportamiento de Curve Middle se conserva para los tramos cortos ;
+      - la media aritmetica de los n puntos es la regla del punto medio
+        aplicada a la integral de linea. El operador de agregacion ya no es
+        una eleccion que defender, se deduce de la geometria del sembrado.
+    Ningun punto cae en un nudo de calle, donde dos tramos se juntan y
+    donde el valor se contaria dos veces.
 
-MESURE QUI JUSTIFIE PASO_M = 25 (1 427 tramos, 47 708 m)
-    longueur mediane 19,3 m, mais p75 48,1 | p90 85,3 | max 246,7 m
-    23,4 % des tramos depassent 50 m et portent 60,6 % du viaire lineaire
-    -> un point median unique n'est representatif que du tramo median
-    pas 25 m -> 2 368 capteurs (x1,7), max 10 points sur un tramo
-    851 tramos de moins de 25 m gardent leur point median unique
+MEDIDA QUE JUSTIFICA PASO_M = 25 (1 427 tramos, 47 708 m)
+    longitud mediana 19,3 m, pero p75 48,1 | p90 85,3 | max 246,7 m
+    23,4 % de los tramos superan 50 m y llevan 60,6 % del viario lineal
+    -> un punto medio unico solo es representativo del tramo mediano
+    paso 25 m -> 2 368 sensores (x1,7), max 10 puntos en un tramo
+    851 tramos de menos de 25 m conservan su punto medio unico
 
 API Rhino : Curve.GetLength, Curve.DivideByCount, Curve.PointAt [SOURCE: GH-01]
 """
 
-# ============================ REGLAGES ======================================
-PASO_M   = 25.0   # longueur cible entre capteurs. 0 = un seul point (milieu).
-N_MAX    = 20     # garde-fou : jamais plus de N_MAX capteurs sur un tramo
-L_MIN_M  = 0.5    # tramo plus court : ignore (bruit de la source)
+# ============================ AJUSTES =======================================
+PASO_M   = 25.0   # longitud objetivo entre sensores. 0 = un solo punto (mitad).
+N_MAX    = 20     # guardarrail : nunca mas de N_MAX sensores en un tramo
+L_MIN_M  = 0.5    # tramo mas corto : ignorado (ruido de la fuente)
 # ============================================================================
 
 import Rhino.Geometry as rg
@@ -69,8 +69,8 @@ def aviso(t):
     _avisos.append(str(t)); _lineas.append('AVISO: ' + str(t))
 
 if _i and len(_i) != len(_c):
-    aviso('curvas (%d) et ids (%d) n\'ont pas la meme longueur : '
-          'les ID seront desalignes.' % (len(_c), len(_i)))
+    aviso('curvas (%d) e ids (%d) no tienen la misma longitud : '
+          'los ID quedaran desalineados.' % (len(_c), len(_i)))
 
 pts, id_seg, n_pts = [], [], []
 pt_medio, id_medio = [], []
@@ -85,7 +85,7 @@ for k, crv in enumerate(_c):
         n_pts.append(0)
         continue
 
-    # Point median : porteur de la moyenne aval, un par tramo.
+    # Punto medio : portador de la media aguas abajo, uno por tramo.
     ident = str(_i[k]) if k < len(_i) else str(k)
     pt_medio.append(crv.PointAtNormalizedLength(0.5))
     id_medio.append(ident)
@@ -93,9 +93,9 @@ for k, crv in enumerate(_c):
     n = 1 if PASO_M <= 0 else max(1, int(round(L / PASO_M)))
     n = min(n, N_MAX)
 
-    # DivideByCount decoupe par longueur d'arc egale. En demandant 2n
-    # divisions et en ne retenant que les parametres d'indice impair, on
-    # obtient les fractions (2j+1)/(2n) = (j+0,5)/n : les milieux.
+    # DivideByCount corta por longitud de arco igual. Pidiendo 2n
+    # divisiones y reteniendo solo los parametros de indice impar, se
+    # obtienen las fracciones (2j+1)/(2n) = (j+0,5)/n : las mitades.
     ts = crv.DivideByCount(2 * n, True)
     if not ts:
         pts.append(crv.PointAtNormalizedLength(0.5)); id_seg.append(ident)
@@ -112,13 +112,13 @@ for k, crv in enumerate(_c):
     n_pts.append(n)
     _largos.append(L)
 
-# ------------------------------------------------------------------ rapport
-linea('Tramos en entree : %d | capteurs : %d | points medians : %d'
+# ------------------------------------------------------------------ informe
+linea('Tramos de entrada : %d | sensores : %d | puntos medios : %d'
       % (len(_c), len(pts), len(pt_medio)))
 if len(pt_medio) != len(set(id_medio)):
-    aviso('id_medio contient des doublons : deux tramos partagent un ID_Segmento.')
+    aviso('id_medio contiene duplicados : dos tramos comparten un ID_Segmento.')
 if n_corto:
-    linea('Tramos ignores (L < %.1f m) : %d' % (L_MIN_M, n_corto))
+    linea('Tramos ignorados (L < %.1f m) : %d' % (L_MIN_M, n_corto))
 if _largos:
     _largos.sort()
     q = lambda p: _largos[min(len(_largos) - 1, int(p * len(_largos)))]
@@ -127,15 +127,15 @@ if _largos:
 if n_pts:
     ok = [v for v in n_pts if v > 0]
     if ok:
-        linea('Capteurs par tramo : min %d | max %d | moyenne %.2f'
+        linea('Sensores por tramo : min %d | max %d | media %.2f'
               % (min(ok), max(ok), float(sum(ok)) / len(ok)))
-        linea('Tramos a 1 seul point (= Curve Middle) : %d (%.1f %%)'
+        linea('Tramos con un solo punto (= Curve Middle) : %d (%.1f %%)'
               % (ok.count(1), 100.0 * ok.count(1) / len(ok)))
-linea('Pas de semis : %.1f m | plafond %d capteurs par tramo' % (PASO_M, N_MAX))
+linea('Paso de sembrado : %.1f m | tope %d sensores por tramo' % (PASO_M, N_MAX))
 linea('')
-linea('Agregation aval : moyenne des capteurs partageant le meme id_seg,')
+linea('Agregacion aguas abajo : media de los sensores con el mismo id_seg,')
 linea('deposee sur le pt_medio du meme ID (voir gh_agregar_utci.py).')
-linea('Les points etant equidistants et centres, cette moyenne est la regle du')
+linea('Al ser los puntos equidistantes y centrados, esa media es la regla del')
 linea('point median appliquee a l\'integrale de ligne du tramo.')
 
 info = '\n'.join(_lineas)

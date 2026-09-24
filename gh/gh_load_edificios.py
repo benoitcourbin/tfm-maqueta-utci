@@ -1,42 +1,63 @@
 # -*- coding: utf-8 -*-
 """
 gh_load_edificios.py — GHPython (Rhino 8 / Python 3, ScriptEditor)
-TFM UTCI Lavapies — chargement de edificios_lavapies_lod1_mesh.json
-                    et de edificios_lavapies_superstruct_mesh.json
+TFM UTCI Lavapies — carga de edificios_lavapies_lod1_mesh.json
+                    y de edificios_lavapies_superstruct_mesh.json
 
-UN SEUL COMPOSANT POUR LES DEUX FICHIERS (fusion du 18/09)
-    Avant, deux composants : Edificios_py (LOD1) et Superest_py (superstructures).
-    Le script accepte deja une liste de chemins : on branche les deux sur la meme
-    entree `path` et tout sort dans un seul jeu mesh / keys / values.
-    4 660 + 4 636 objets, 266 536 faces, toutes triangulaires.
-    La sortie `edificios` de gh_cache.py donne ces deux chemins dans le bon ordre.
+UN SOLO COMPONENTE PARA LOS DOS FICHEROS (fusion del 18/09)
+    Antes, dos componentes : Edificios_py (LOD1) y Superest_py (superestructuras).
+    El script ya acepta una lista de rutas : se conectan las dos a la misma
+    entrada `path` y todo sale en un unico juego mesh / keys / values.
+    4 660 + 4 636 objetos, 266 536 caras, todas triangulares.
+    La salida `edificios` de gh_cache.py da estas dos rutas en el orden correcto.
 
-ENTREES DU COMPOSANT : 2 seulement
-    path  (List, str)  chemin(s) vers le(s) *_mesh.json
-    eap   (Item)       Earth Anchor Point : texte Heron, point lon/lat ou point UTM
+ENTRADAS DEL COMPONENTE : 2 solamente
+    path  (List, str)  ruta(s) hacia el/los *_mesh.json
+    eap   (Item)       Earth Anchor Point : texto Heron, punto lon/lat o punto UTM
 
-SORTIES : mesh (List) · keys (Tree) · values (Tree) · info (str)
+SALIDAS : mesh (List) · keys (Tree) · values (Tree) · info (str)
 
-Tout le reste se regle sur les 3 constantes ci-dessous, dans le code.
+Todo lo demas se ajusta con las 3 constantes de abajo, en el codigo.
 
-Les solides sont deja fermes et 2-manifold a la generation (build_lod1.py) :
-pas de Weld angulaire, pas de FillHoles. Normales de FACE, jamais de sommet —
-c'est le lissage des normales de sommet qui donnait l'aspect "organique".
+Los solidos ya estan cerrados y son 2-manifold en la generacion (build_lod1.py) :
+sin Weld angular, sin FillHoles. Normales de CARA, nunca de vertice —
+es el suavizado de las normales de vertice lo que daba el aspecto "organico".
 
 API Rhino : Mesh.Vertices.Add / Faces.AddFace / Normals.Clear /
 FaceNormals.ComputeFaceNormals / Compact [SOURCE: GH-01]
-Geometrie : [SOURCE: MAD-01] · attributs : [SOURCE: CAT-01] [SOURCE: CAT-03]
+Geometria : [SOURCE: MAD-01] · atributos : [SOURCE: CAT-01] [SOURCE: CAT-03]
 """
 
-# ============================ REGLAGES ======================================
-ACTIVO    = True    # False : ne charge rien, la geometrie bakee dans les
-                    # calques Rhino reste en place. A passer a False apres le
-                    # bake pour que le .gh s'ouvre vite.
-RADIO_MAX = 1200.0  # m autour de l'EAP. Ecarte les 10 objets 01_MARQUESINA_P
-                    # situes a 8,5-11,9 km qui etendaient la bbox a 12,8 km.
-                    # 0 = pas de filtre.
-Z_REF     = 0.0     # cote a retrancher a Z. 0 = altitude absolue conservee.
+# ============================ AJUSTES =======================================
+ACTIVO    = True    # False : no carga nada, la geometria bakeada en las
+                    # capas Rhino sigue en su sitio. Poner a False tras el
+                    # bake para que el .gh se abra rapido.
+RADIO_MAX = 1200.0  # m alrededor del EAP. Descarta los 10 objetos 01_MARQUESINA_P
+                    # situados a 8,5-11,9 km que extendian la bbox a 12,8 km.
+                    # 0 = sin filtro.
+Z_REF     = 0.0     # cota a restar de Z. 0 = altitud absoluta conservada.
+ALT_MAX_MARQUESINA = 20.0   # m. Una marquesina mas alta es un artefacto de extrusion
+                            # del SHP, no una construccion : 4 casos en Lavapies, de 64
+                            # a 88 m (ids 150180-150183), para 15 a 130 m2 de huella
+                            # y 16 caras. Proyectan sombras inexistentes.
+                            # 0 = sin filtro. Verificado con la mediana del barrio :
+                            # 27,1 m, y ningun EDIFICIO_P resulta afectado.
 # ============================================================================
+
+# --------------------------- CLAVES RETENIDAS -------------------------------
+# Lista blanca de atributos escritos en el .3dm. [] = todas.
+# Lo que no esta aqui sigue en el CSV de la capa, unible por el id.
+# Se conservan las claves que PILOTAN algo en Grasshopper: v5 lee las capas
+# con Reference by Layer, que devuelve geometria Y atributos. Sin ellas no
+# se puede agrupar por epoca (albedo de fachada) ni por pavimento.
+# Motivo: cada clave x objeto es una escritura de user text; 9 296 objetos x
+# 23 claves tumbaban Rhino (trampa §7.10).
+CLAVES = [
+    'id_3d',
+    'anio_construccion',
+]
+# ----------------------------------------------------------------------------
+
 
 import json, os, re, math
 import Rhino.Geometry as rg
@@ -56,7 +77,7 @@ def aviso(t):
 
 
 def latlon_a_utm30(lat, lon):
-    """Transverse Mercator zone 30N, GRS80 (EPSG:25830)."""
+    """Transverse Mercator zona 30N, GRS80 (EPSG:25830)."""
     a, f = 6378137.0, 1.0 / 298.257222101
     e2 = f * (2 - f); ep2 = e2 / (1 - e2)
     k0, lon0, FE = 0.9996, math.radians(-3.0), 500000.0
@@ -75,7 +96,7 @@ def latlon_a_utm30(lat, lon):
 
 
 def resolver_eap(obj):
-    """Texte Heron, Point3d lon/lat ou Point3d UTM -> (E, N) en EPSG:25830."""
+    """Texto Heron, Point3d lon/lat o Point3d UTM -> (E, N) en EPSG:25830."""
     if obj is None:
         return None
     if isinstance(obj, str):
@@ -83,21 +104,21 @@ def resolver_eap(obj):
         lat = re.search(r'Lat\w*\s*[:=]\s*(-?\d+\.?\d*)', obj, re.I)
         if lon and lat:
             e, n = latlon_a_utm30(float(lat.group(1)), float(lon.group(1)))
-            linea('EAP (texte Heron) -> UTM %.2f %.2f' % (e, n)); return e, n
-        aviso('EAP texte non interpretable : %s' % obj); return None
+            linea('EAP (texto Heron) -> UTM %.2f %.2f' % (e, n)); return e, n
+        aviso('EAP en texto no interpretable : %s' % obj); return None
     try:
         x, y = float(obj.X), float(obj.Y)
     except Exception:
-        aviso('type EAP non supporte : %s' % type(obj)); return None
+        aviso('tipo de EAP no admitido : %s' % type(obj)); return None
     if abs(x) <= 180.0 and abs(y) <= 90.0:
         e, n = latlon_a_utm30(y, x)
-        linea('EAP (point lon/lat) -> UTM %.2f %.2f' % (e, n)); return e, n
-    linea('EAP (point UTM) %.2f %.2f' % (x, y)); return x, y
+        linea('EAP (punto lon/lat) -> UTM %.2f %.2f' % (e, n)); return e, n
+    linea('EAP (punto UTM) %.2f %.2f' % (x, y)); return x, y
 
 
 def construir_malla(obj, ox, oy, oz):
-    """Malla depuis {'v':[[x,y,z]...],'f':[[i,j,k]...]}. Indices deja partages :
-    la topologie est correcte a la source, aucune soudure necessaire."""
+    """Malla desde {'v':[[x,y,z]...],'f':[[i,j,k]...]}. Indices ya compartidos :
+    la topologia es correcta en el origen, no hace falta ninguna soldadura."""
     m = rg.Mesh(); va = m.Vertices
     for v in obj['v']:
         va.Add(float(v[0]) - ox, float(v[1]) - oy, float(v[2]) - oz)
@@ -105,9 +126,9 @@ def construir_malla(obj, ox, oy, oz):
     for f in obj['f']:
         if len(f) == 3:   fa.AddFace(f[0], f[1], f[2])
         elif len(f) == 4: fa.AddFace(f[0], f[1], f[2], f[3])
-    # Normales de FACE. Un sommet d'arete appartient a trois faces
-    # perpendiculaires : des normales de sommet en feraient la moyenne et
-    # Rhino interpolerait -> degrade continu sur les aretes, aspect organique.
+    # Normales de CARA. Un vertice de arista pertenece a tres caras
+    # perpendiculares : unas normales de vertice harian su media y
+    # Rhino interpolaria -> degradado continuo en las aristas, aspecto organico.
     m.Normals.Clear()
     m.FaceNormals.ComputeFaceNormals()
     m.Compact()
@@ -117,21 +138,26 @@ def construir_malla(obj, ox, oy, oz):
 mesh = []
 keys = DataTree[object]()
 values = DataTree[object]()
-n_obj = n_desc = n_lejos = 0
+n_obj = n_desc = n_lejos = n_marq = 0
 
 if not ACTIVO:
     linea('ACTIVO = False : nada cargado. La geometria bakeada sigue en las capas.')
     _paths = []
+elif not _paths:
+    aviso('el puerto path esta vacio : nada que cargar. '
+          'Conectar la salida correspondiente de gh_cache.py '
+          '(y comprobar su salida info).')
+
 
 _eap_utm = resolver_eap(_eap) if ACTIVO else None
 
 for ruta in _paths:
     if not ruta or not os.path.exists(str(ruta)):
-        aviso('chemin inexistant : %s' % ruta); continue
+        aviso('ruta inexistente : %s' % ruta); continue
     with open(str(ruta), 'r', encoding='utf-8') as fh:
         datos = json.load(fh)
     if 'objetos' not in datos:
-        aviso('%s : cle "objetos" absente' % os.path.basename(str(ruta))); continue
+        aviso('%s : falta la clave "objetos"' % os.path.basename(str(ruta))); continue
 
     meta = datos.get('meta', {})
     dx = float(meta.get('dx', 0.0) or 0.0)
@@ -142,10 +168,10 @@ for ruta in _paths:
     else:
         ox = oy = oz = 0.0
         if ACTIVO:
-            aviso('sans EAP : geometrie laissee en UTM absolu (~440 000 / 4 473 000).')
+            aviso('sin EAP : geometria dejada en UTM absoluto (~440 000 / 4 473 000).')
 
     objetos = datos.get('objetos', [])
-    linea('%s : %d objets | tipo=%s' % (os.path.basename(str(ruta)),
+    linea('%s : %d objetos | tipo=%s' % (os.path.basename(str(ruta)),
                                         len(objetos), meta.get('tipo')))
 
     for o in objetos:
@@ -155,6 +181,18 @@ for ruta in _paths:
             cy = sum(p[1] for p in vs) / len(vs) - oy
             if (cx*cx + cy*cy) ** 0.5 > RADIO_MAX:
                 n_lejos += 1; continue
+
+        # Artefactos de extrusion : marquesinas inverosimilmente altas.
+        if ALT_MAX_MARQUESINA > 0.0:
+            _capa = str((o.get('attr') or {}).get('nombre_capa') or '')
+            if 'MARQUESINA' in _capa.upper():
+                try:
+                    _h = float((o.get('attr') or {}).get('altura_m') or 0.0)
+                except Exception:
+                    _h = 0.0
+                if _h > ALT_MAX_MARQUESINA:
+                    n_marq += 1
+                    continue
 
         m = construir_malla(o, ox, oy, oz)
         if not m.IsValid or m.Faces.Count == 0:
@@ -166,6 +204,8 @@ for ruta in _paths:
         attr.setdefault('clase', o.get('clase'))
         attr.setdefault('capa', o.get('capa'))
         for k in sorted(attr.keys()):
+            if CLAVES and k not in CLAVES:
+                continue
             keys.Add(str(k), rama)
             values.Add('' if attr[k] is None else str(attr[k]), rama)
         mesh.append(m); n_obj += 1
@@ -175,6 +215,8 @@ linea('Solidos : %d   (invalidos: %d | fuera de radio %.0f m: %d)'
       % (len(mesh), n_desc, RADIO_MAX, n_lejos))
 if mesh:
     cerradas = sum(1 for m in mesh if m.IsClosed)
+    if n_marq:
+        linea('Marquesinas descartadas (> %.0f m) : %d' % (ALT_MAX_MARQUESINA, n_marq))
     linea('Cerrados : %d / %d  (%.1f %%)'
           % (cerradas, len(mesh), 100.0*cerradas/len(mesh)))
     linea('Caras : %d' % sum(m.Faces.Count for m in mesh))

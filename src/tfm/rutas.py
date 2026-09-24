@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-rutas.py — arborescence unique du projet, construite à partir du nom de zone.
+rutas.py — árbol de directorios único del proyecto, construido a partir del
+nombre de la zona.
 
-Aucun chemin n'est écrit en dur ailleurs dans la chaîne. Un seul endroit à
-changer si l'arborescence du Drive bouge.
+Ninguna ruta se escribe a mano en otro punto de la cadena. Un solo sitio que
+cambiar si el árbol del Drive se mueve.
 
-RACINE :
+RAÍZ :
   Colab  -> /content/drive/MyDrive/TFM_UTCI_Lavapies_2026
   Windows-> G:\\Mi unidad\\TFM_UTCI_Lavapies_2026
-  ou variable d'environnement TFM_RAIZ (tests locaux).
+  o variable de entorno TFM_RAIZ (pruebas locales).
 """
 
 import os
@@ -24,7 +25,7 @@ CANDIDATAS = [
 
 
 def raiz():
-    """Racine du projet sur le Drive."""
+    """Raíz del proyecto en el Drive."""
     r = os.environ.get('TFM_RAIZ')
     if r:
         return r.rstrip('/\\')
@@ -37,7 +38,7 @@ def raiz():
 
 
 class Rutas(object):
-    """Tous les chemins d'une zone. Crée les dossiers manquants."""
+    """Todas las rutas de una zona. Crea las carpetas que falten."""
 
     def __init__(self, zona, crear=True):
         self.zona = zona
@@ -56,9 +57,9 @@ class Rutas(object):
                       self.gh_scripts, self.ladybug, self.codigo):
                 os.makedirs(d, exist_ok=True)
 
-    # --- fichiers de la maquette -------------------------------------------
+    # --- ficheros de la maqueta --------------------------------------------
     def m(self, nombre):
-        """Fichier de la maquette : m('suelo_%s_mesh.json')."""
+        """Fichero de la maqueta : m('suelo_%s_mesh.json')."""
         return self.maqueta + '/' + (nombre % self.zona if '%s' in nombre else nombre)
 
     @property
@@ -98,7 +99,7 @@ class Rutas(object):
         return self.m('manifest_%s.json')
 
     def informe(self, nombre):
-        """Tous les rapports vont dans DOCS/INFORMES."""
+        """Todos los informes van a DOCS/INFORMES."""
         return self.informes + '/' + (nombre % self.zona if '%s' in nombre else nombre)
 
     def run_ladybug(self, version):
@@ -108,7 +109,7 @@ class Rutas(object):
 
 
 def cargar_zona(zona, config_dir=None):
-    """Lit config/zonas/<zona>.json (du dépôt), retourne (config, Rutas)."""
+    """Lee config/zonas/<zona>.json (del repositorio), devuelve (config, Rutas)."""
     if config_dir is None:
         config_dir = os.path.join(os.path.dirname(os.path.dirname(
             os.path.dirname(os.path.abspath(__file__)))), 'config', 'zonas')

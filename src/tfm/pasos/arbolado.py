@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-arbolado.py — découpe l'inventaire municipal d'arbolado à la bbox de la zone.
+arbolado.py — recorta el inventario municipal de arbolado a la bbox de la zona.
 
-L'inventaire se télécharge UNE FOIS pour toute la ville, dans
-`FUENTES/Arbolado/`. Cette étape en extrait les arbres de la zone et écrit
-`FUENTES/Arbolado/arboles_<zona>_clean.csv`, qui est ce que la capa `arbolado`
-du cuaderno attend. Plus de fichier préparé à la main par quartier.
+El inventario se descarga UNA VEZ para toda la ciudad, en
+`FUENTES/Arbolado/`. Este paso extrae de él los árboles de la zona y escribe
+`FUENTES/Arbolado/arboles_<zona>_clean.csv`, que es lo que la capa `arbolado`
+del cuaderno espera. Se acabaron los ficheros preparados a mano por barrio.
 
-Formats acceptés : CSV (séparateur , ou ;) et GeoJSON.
-Coordonnées : colonnes X/Y en EPSG:25830, ou longitud/latitud en degrés, ou la
-géométrie du GeoJSON.
+Formatos aceptados: CSV (separador , o ;) y GeoJSON.
+Coordenadas: columnas X/Y en EPSG:25830, o longitud/latitud en grados, o la
+geometría del GeoJSON.
 """
 
 import os
@@ -19,7 +19,7 @@ COLS_X = ('x', 'coord_x', 'utm_x', 'este', 'x_utm', 'coordenada_x')
 COLS_Y = ('y', 'coord_y', 'utm_y', 'norte', 'y_utm', 'coordenada_y')
 COLS_LON = ('longitud', 'lon', 'lng', 'long', 'longitude')
 COLS_LAT = ('latitud', 'lat', 'latitude')
-# Ce que la capa `arbolado` du cuaderno lit ensuite.
+# Lo que la capa `arbolado` del cuaderno lee después.
 COLS_MINIMAS = ('altura_total_m', 'h_inicio_follaje_m', 'forma_copa')
 
 
@@ -53,13 +53,13 @@ def _cargar(ruta):
 
 
 def _xy(df):
-    """Retourne (serie_x, serie_y) en EPSG:25830, ou lève."""
+    """Devuelve (serie_x, serie_y) en EPSG:25830, o lanza una excepción."""
     cx, cy = _columna(df, COLS_X), _columna(df, COLS_Y)
     if cx and cy:
         import pandas as pd
         x = pd.to_numeric(df[cx], errors='coerce')
         y = pd.to_numeric(df[cy], errors='coerce')
-        # Des degrés dans une colonne nommée X : on ne se fie pas au nom.
+        # Grados en una columna llamada X: no nos fiamos del nombre.
         if x.abs().max() <= 180 and y.abs().max() <= 90:
             cx = cy = None
         else:
@@ -78,7 +78,7 @@ def _xy(df):
 
 
 def recortar(cfg, rutas, log=print):
-    """Écrit arboles_<zona>_clean.csv à partir de l'inventaire de la ville."""
+    """Escribe arboles_<zona>_clean.csv a partir del inventario de la ciudad."""
     zona = cfg['zona']
     carpeta = rutas.fuentes + '/Arbolado'
     destino = carpeta + '/arboles_%s_clean.csv' % zona
@@ -88,7 +88,7 @@ def recortar(cfg, rutas, log=print):
                   and os.path.basename(f) != os.path.basename(destino)]
     if not candidatos:
         raise RuntimeError('no hay ningún inventario en %s' % carpeta)
-    # Le plus gros fichier est celui de la ville ; les découpes sont plus petites.
+    # El fichero más grande es el de la ciudad; los recortes son más pequeños.
     candidatos.sort(key=os.path.getsize, reverse=True)
 
     x0, y0, x1, y1 = cfg['bbox_contexto']

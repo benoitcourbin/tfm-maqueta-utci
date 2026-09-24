@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-capas_nb.py — exécute les sections du cuaderno `Maqueta_Lavapies_v1.ipynb`
-depuis un script, une capa à la fois, avec la configuration de la zone.
+capas_nb.py — ejecuta las secciones del cuaderno `Maqueta_Lavapies_v1.ipynb`
+desde un script, una capa cada vez, con la configuración de la zona.
 
-POURQUOI PASSER PAR LE CUADERNO
-Le code des cinq capas est vérifié et a produit la maquette actuelle. Le
-réécrire en modules serait un second chantier, avec son lot de régressions.
-On l'exécute donc tel quel, en remplaçant seulement sa cellule de configuration.
-La migration capa par capa vers `pasos/<capa>.py` peut se faire ensuite, sans
-casser la chaîne.
+POR QUÉ PASAR POR EL CUADERNO
+El código de las cinco capas está verificado y ha producido la maqueta actual.
+Reescribirlo en módulos sería una segunda obra, con su lote de regresiones.
+Por eso se ejecuta tal cual, sustituyendo sólo su celda de configuración.
+La migración capa a capa hacia `pasos/<capa>.py` puede hacerse después, sin
+romper la cadena.
 
-Chaque capa est exécutée dans le MEME espace de noms : la capa `viario` a besoin
-du MDT écrit par `topo`, et `lod1` des emprises écrites par `edificios`.
+Cada capa se ejecuta en el MISMO espacio de nombres: la capa `viario` necesita
+el MDT escrito por `topo`, y `lod1` las huellas escritas por `edificios`.
 """
 
 import os
@@ -29,7 +29,7 @@ def _celdas(ruta_nb):
 
 
 def _distritos(cfg):
-    """Noms de dossiers Multipatch : ceux du JSON, sinon ceux détectés."""
+    """Nombres de carpetas Multipatch: los del JSON, si no, los detectados."""
     if cfg.get('distritos'):
         return list(cfg['distritos'])
     return ['%s.%s_3D' % (c, n.upper().replace(' ', '_'))
@@ -37,11 +37,11 @@ def _distritos(cfg):
 
 
 def preparar(ruta_nb, cfg, rutas):
-    """Retourne l'espace de noms du cuaderno, configuré pour cette zone."""
+    """Devuelve el espacio de nombres del cuaderno, configurado para esta zona."""
     celdas = _celdas(ruta_nb)
     ns = {'__name__': '__main__'}
     exec(compile(celdas[CELDA_CONFIG], '<celda_3>', 'exec'), ns)
-    # La configuration de la zone écrase celle du cuaderno.
+    # La configuración de la zona sobrescribe la del cuaderno.
     ns.update({
         'NOMBRE_ZONA': cfg['zona'],
         'BBOX': tuple(cfg['bbox']),
@@ -65,10 +65,10 @@ def preparar(ruta_nb, cfg, rutas):
 
 
 def ejecutar_capa(ns, capa):
-    """Exécute toutes les cellules de la section `capa`.
+    """Ejecuta todas las celdas de la sección `capa`.
 
-    Les cellules d'une section commencent par `if '<capa>' in CAPAS:`. On force
-    CAPAS à cette seule capa pour que les autres sections restent inertes.
+    Las celdas de una sección empiezan por `if '<capa>' in CAPAS:`. Se fuerza
+    CAPAS a esa única capa para que las demás secciones queden inertes.
     """
     ns['CAPAS'] = [capa]
     marca = MARCA % capa

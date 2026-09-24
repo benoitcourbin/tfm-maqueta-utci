@@ -8,20 +8,25 @@ construcción (Zigurat / UB). Está parametrizada por zona: otro barrio de Madri
 sólo necesita un fichero de configuración.
 
 **Código aquí. Datos en Google Drive.** Este repositorio no contiene ningún
-ráster ni maqueta: sólo el código, la configuración de zonas y los informes.
+ráster ni maqueta: sólo el código y la configuración de zonas.
+
+## Fuente de referencia
+
+La copia de referencia del código es la carpeta del Drive del equipo
+`TFM_UTCI_Lavapies_2026/02_CODIGO/pipeline/`. **No se edita el código en
+GitHub**: se edita en el Drive y se publica con `colab/publicar_github.ipynb`.
 
 ## Uso
+
+En Colab, el cuaderno `colab/TFM_Maqueta.ipynb` monta el Drive, actualiza el
+repositorio y lanza la cadena. En local:
 
 ```bash
 git clone https://github.com/benoitcourbin/tfm-maqueta-utci.git
 cd tfm-maqueta-utci
 pip install -r requirements.txt
-
 python run_maqueta.py --zona lavapies
 ```
-
-En Colab, el cuaderno `colab/TFM_Maqueta.ipynb` hace las tres cosas: montar el
-Drive, actualizar el repositorio y lanzar la cadena.
 
 La ejecución **no se detiene ante un fallo**: cada paso queda registrado y el
 informe final dice qué falta y cómo obtenerlo a mano.
@@ -30,6 +35,16 @@ informe final dice qué falta y cómo obtenerlo a mano.
 DOCS/INFORMES/informe_ejecucion_<zona>.md    qué ha pasado y qué hacer
 MAQUETA/<zona>/manifest_<zona>.json          lo que lee Grasshopper
 ```
+
+## Publicar cambios en GitHub (cualquier miembro del equipo)
+
+Requisitos, una sola vez: ser colaborador del repositorio, tener el acceso
+directo `TFM_UTCI_Lavapies_2026` en *Mi unidad* y un token de GitHub guardado
+en los Secretos de Colab con el nombre `GITHUB_TOKEN`.
+
+1. Abrir `colab/publicar_github.ipynb` y ejecutar la celda **1 · Control**:
+   muestra los cambios, no envía nada.
+2. Revisar la lista. Escribir el mensaje y ejecutar la celda **2 · Publicar**.
 
 ## Estructura
 
@@ -40,17 +55,20 @@ src/tfm/estado.py             pasos, manifiesto, informe de incidencias
 src/tfm/proveedores/madrid.py catálogo de fuentes de una ciudad
 src/tfm/pasos/capas_nb.py     ejecuta las capas del cuaderno verificado
 src/tfm/pasos/suelo.py        suelo unificado (viario + relleno + bordillos)
+src/tfm/pasos/arbolado.py     arbolado
 run_maqueta.py                orquestador
 exportar_resultados.py        Ladybug → Drive (original + CSV)
 gh/                           componentes GHPython (Rhino 8)
 colab/TFM_Maqueta.ipynb       punto de entrada en Colab
-INFORMES/                     decisiones e informes del proyecto
+colab/publicar_github.ipynb   publicación Drive → GitHub
 ```
 
 ## Nueva zona
 
 1. Copiar `config/zonas/lavapies.json` a `<zona>.json` y ajustar `bbox`,
    `origen_local`, `eap`, `distritos`.
+   La bbox de Lavapiés es el cuadrado de 1 200 m centrado en el punto que usa el
+   cuaderno ML (40.4077, −3.7050, radio 600 m).
 2. `python run_maqueta.py --zona <zona>`.
 3. En Grasshopper, escribir el nombre de la zona en el componente `gh_cache`.
 
@@ -61,10 +79,17 @@ formatos cambian. Hoy sólo existe `madrid.py`.
 
 | Componente | Papel |
 |---|---|
-| `gh/gh_cache.py` | lee el manifiesto y entrega las rutas de cada capa |
+| `gh/gh_cache.py` | lee el manifiesto y entrega rutas, EAP y bbox de la zona |
 | `gh/gh_load_suelo.py` | suelo (sustituye topo + viario); salida `suelo` para el drapeado |
 | `gh/gh_load_edificios.py` | LOD1 + superestructuras en un solo componente |
 | `gh/gh_load_arboles.py` | arbolado |
+| `gh/Drape_CurvesOnMesh.py` | proyecta los ejes de calle sobre el suelo |
+| `gh/gh_puntos_utci.py` | malla de sensores por tramo |
+| `gh/gh_utci_lavapies.py` | lee los resultados Ladybug, agrega por tramo y une con el GeoJSON ML |
+| `gh/gh_exportar.py` | lanzador de `exportar_resultados.py` desde Grasshopper |
+| `gh/gh_exportar_ifc.py`, `gh/gh_exportar_gltf.py` | exportaciones IFC y glTF — pendientes de documentar |
+
+El bake de las capas se hace con EleFront.
 
 ## Fuentes de datos
 

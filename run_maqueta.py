@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-run_maqueta.py — point d'entrée unique de la chaîne.
+run_maqueta.py — punto de entrada único de la cadena.
 
     python run_maqueta.py --zona lavapies
     python run_maqueta.py --zona lavapies --pasos suelo
     python run_maqueta.py --zona lavapies --sin-descargas
 
-La chaîne NE S'ARRETE PAS sur une erreur : chaque étape est enregistrée et le
-rapport final dit ce qu'il reste à faire à la main, avec l'URL et le dossier
-de destination. Les rapports vont tous dans `DOCS/INFORMES/`.
+La cadena NO SE DETIENE ante un error: cada paso queda registrado y el
+informe final dice lo que queda por hacer a mano, con la URL y la carpeta
+de destino. Todos los informes van a `DOCS/INFORMES/`.
 """
 
 import os

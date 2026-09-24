@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-estado.py — suivi d'exécution, manifeste et rapport d'incidents.
+estado.py — seguimiento de ejecución, manifiesto e informe de incidencias.
 
-Principe : la chaîne ne s'arrête jamais. Chaque étape est enveloppée, son échec
-est enregistré avec sa cause et la marche à suivre manuelle, et l'exécution
-continue. À la fin, deux fichiers :
+Principio : la cadena no se detiene nunca. Cada paso va envuelto, su fallo se
+registra con su causa y el procedimiento manual a seguir, y la ejecución
+continúa. Al final, dos ficheros :
 
-  DOCS/INFORMES/informe_ejecucion_<zona>.md   lisible : quoi faire à la main
-  MAQUETA/<zona>/manifest_<zona>.json         machine : ce que Grasshopper lit
+  DOCS/INFORMES/informe_ejecucion_<zona>.md   legible : qué hacer a mano
+  MAQUETA/<zona>/manifest_<zona>.json         máquina : lo que lee Grasshopper
 """
 
 import os
@@ -20,7 +20,7 @@ OK, FALLO, OMITIDO = 'ok', 'fallo', 'omitido'
 
 
 def huella(ruta, bloque=1024 * 1024):
-    """SHA1 du premier Mo + taille : suffit pour détecter un fichier changé."""
+    """SHA1 del primer MB + tamaño : basta para detectar un fichero cambiado."""
     h = hashlib.sha1()
     with open(ruta, 'rb') as fh:
         h.update(fh.read(bloque))
@@ -36,10 +36,10 @@ class Ejecucion(object):
 
     # ------------------------------------------------------------------ pasos
     def paso(self, nombre, funcion, remedio='', salidas=None, omitir=False):
-        """Exécute `funcion()`. Ne relance jamais l'exception.
+        """Ejecuta `funcion()`. Nunca relanza la excepción.
 
-        remedio : texte affiché dans le rapport si l'étape échoue.
-        salidas : fichiers attendus ; leur absence vaut échec.
+        remedio : texto mostrado en el informe si el paso falla.
+        salidas : ficheros esperados ; su ausencia equivale a fallo.
         """
         if omitir:
             self.pasos.append({'paso': nombre, 'estado': OMITIDO, 'seg': 0,
@@ -54,7 +54,7 @@ class Ejecucion(object):
         except Exception as ex:
             reg['estado'] = FALLO
             reg['detalle'] = '%s: %s' % (type(ex).__name__, ex)
-            # Une absence de fichier n'a pas besoin de sa trace : le remède suffit.
+            # La ausencia de un fichero no necesita su traza : basta el remedio.
             if 'no se descarga' not in str(ex):
                 reg['traza'] = traceback.format_exc(limit=3)
             res = None
@@ -78,6 +78,22 @@ class Ejecucion(object):
         return [p for p in self.pasos if p['estado'] == FALLO]
 
     # -------------------------------------------------------------- salidas
+    def _entrada(self, ruta):
+        """Entrada de manifiesto PORTABLE.
+
+        `ruta` es relativa a la raíz del Drive : el manifiesto escrito desde
+        Colab (/content/drive/MyDrive/...) sigue siendo legible bajo Windows
+        (G:\\Mi unidad\\...). `ruta_origen` guarda la ruta absoluta de la
+        máquina que lo generó, sólo para trazabilidad.
+        """
+        base = self.rutas.raiz.replace('/', '\\').rstrip('\\')
+        abs_ = os.path.abspath(ruta).replace('/', '\\')
+        rel = abs_[len(base):].lstrip('\\') if abs_.lower().startswith(base.lower()) else abs_
+        return {'ruta': rel,
+                'ruta_origen': abs_,
+                'bytes': os.path.getsize(ruta),
+                'huella': huella(ruta)}
+
     def manifiesto(self, cfg):
         datos = {'zona': self.zona, 'generado': time.strftime('%Y-%m-%dT%H:%M:%S'),
                  'crs': cfg.get('crs'), 'bbox': cfg.get('bbox'),
@@ -90,16 +106,12 @@ class Ejecucion(object):
                   'huellas': self.rutas.huellas, 'viario': self.rutas.viario_gj}
         for k, r in claves.items():
             if os.path.exists(r):
-                datos['ficheros'][k] = {'ruta': r.replace('/', '\\'),
-                                        'bytes': os.path.getsize(r),
-                                        'huella': huella(r)}
+                datos['ficheros'][k] = self._entrada(r)
             else:
                 datos['ficheros'][k] = None
-        # L'EPW ne vit pas dans la carpeta de la zone : on note celui retenu.
+        # El EPW no vive en la carpeta de la zona : se anota el que se ha elegido.
         if cfg.get('epw_ruta') and os.path.exists(cfg['epw_ruta']):
-            datos['ficheros']['epw'] = {'ruta': cfg['epw_ruta'].replace('/', '\\'),
-                                        'bytes': os.path.getsize(cfg['epw_ruta']),
-                                        'huella': huella(cfg['epw_ruta'])}
+            datos['ficheros']['epw'] = self._entrada(cfg['epw_ruta'])
         with open(self.rutas.manifiesto, 'w', encoding='utf-8') as fh:
             json.dump(datos, fh, ensure_ascii=False, indent=2)
         return datos

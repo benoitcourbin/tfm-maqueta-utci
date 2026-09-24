@@ -1,38 +1,41 @@
 # -*- coding: utf-8 -*-
 """
-maqueta_suelo_lavapies.py — Colab (ou Python 3 local)
-TFM UTCI Lavapies — sol unifié : viario + relleno + bordillos, sur MDT nettoyé.
+maqueta_suelo_lavapies.py — Colab (o Python 3 local)
+TFM UTCI Lavapies — suelo unificado : viario + relleno + bordillos, sobre MDT
+limpio.
 
-Remplace topo_lavapies_mesh.json ET viario_lavapies_mesh.json pour la simulation.
+Sustituye a topo_lavapies_mesh.json Y a viario_lavapies_mesh.json para la
+simulación.
 
-POURQUOI
-  - La topo (grille 10 m) et le viario (MDT 1 m au pixel) ne suivent pas le même
-    terrain : 39 % des sommets du viario passent SOUS la topo, jusqu'à 3,6 m
-    (mesure du 17/09) -> "ergots".
-  - Topo et viario se superposent (doublon de surfaces).
-  - Voirie et trottoirs sont des nappes indépendantes, décalées en Z dans GH.
+POR QUÉ
+  - La topografía (malla de 10 m) y el viario (MDT de 1 m al píxel) no siguen el
+    mismo terreno : el 39 % de los vértices del viario quedan POR DEBAJO de la
+    topografía, hasta 3,6 m (medida del 17/09) -> "espolones".
+  - Topografía y viario se superponen (duplicado de superficies).
+  - Calzada y aceras son capas independientes, desfasadas en Z dentro de GH.
 
-METHODE
-  1. MDT nettoyé : |z - médiane 21 m| > 5 m -> médiane (31 px dans la zone).
-  2. Partition plane exclusive par priorité :
-       huella > adoquinado > acera > isleta > vado > calzada ; relleno = reste.
-  3. Noeuds communs : toutes les frontières + une grille de 50 m sont unies
-     (noding), polygonisées, puis simplifiées en couverture -> deux faces
-     voisines partagent EXACTEMENT leurs sommets.
-  4. Triangulation contrainte (lib `triangle`, option Y : aucun point ajouté sur
-     les frontières) + points intérieurs sur grille pour suivre le relief.
-  5. Z = interpolation bilinéaire du MDT nettoyé, une seule fonction pour tous.
-  6. Niveaux : chaussée 0, trottoir/isleta/relleno +H_BORD ; bordillos verticaux
-     sur chaque arête entre deux niveaux différents.
+MÉTODO
+  1. MDT limpio : |z - mediana 21 m| > 5 m -> mediana (31 px en la zona).
+  2. Partición plana exclusiva por prioridad :
+       huella > adoquinado > acera > isleta > vado > calzada ; relleno = resto.
+  3. Nodos comunes : todas las fronteras más una malla de 50 m se unen
+     (noding), se poligonizan y luego se simplifican como cobertura -> dos caras
+     vecinas comparten EXACTAMENTE sus vértices.
+  4. Triangulación restringida (librería `triangle`, opción Y : ningún punto
+     añadido sobre las fronteras) + puntos interiores en malla para seguir el
+     relieve.
+  5. Z = interpolación bilineal del MDT limpio, una sola función para todos.
+  6. Niveles : calzada 0, acera/isleta/relleno +H_BORD ; bordillos verticales
+     en cada arista entre dos niveles distintos.
 
-Dépendances : numpy, scipy, rasterio, shapely>=2.0, triangle
+Dependencias : numpy, scipy, rasterio, shapely>=2.0, triangle
     !pip install -q triangle
 """
 
-# ====================== REGLAGES (via variables d'environnement) ============
-# Le pas est piloté par run_maqueta.py, qui exporte TFM_SUELO_* avant d'appeler
-# ce fichier. Les valeurs ci-dessous sont les repliegues : lancé seul, le script
-# reproduit le run du 17/09 sur Lavapiés.
+# ====================== AJUSTES (vía variables de entorno) ==================
+# El paso lo pilota run_maqueta.py, que exporta TFM_SUELO_* antes de llamar a
+# este fichero. Los valores de abajo son los de reserva : lanzado en solitario,
+# el script reproduce la ejecución del 17/09 sobre Lavapiés.
 import os, ast
 
 def _cfg(clave, defecto):
@@ -53,24 +56,24 @@ OUT_DIR      = os.environ.get('MAQUETA_OUT', BASE)
 BBOX_CONTEXTO = tuple(_cfg('BBOX_CONTEXTO', (439274.77, 4472345.06, 441079.55, 4474148.43)))
 BBOX_ANALISIS = tuple(_cfg('BBOX_ANALISIS', (439574.77, 4472645.06, 440779.55, 4473848.43)))
 
-UMBRAL_MDT  = _cfg('UMBRAL_MDT', 5.0)    # m : écart à la médiane -> pixel corrigé
-VENTANA_MDT = _cfg('VENTANA_MDT', 21)    # px (1 m) : fenêtre de la médiane
-SIMPLIFICAR = _cfg('SIMPLIFICAR', 0.25)  # m : simplification de couverture
-PASO_INT    = _cfg('PASO_INT', 10.0)     # m : grille de points intérieurs
-MARGEN_INT  = 1.0    # m : distance mini des points intérieurs à la frontière
-H_BORD      = _cfg('H_BORD', 0.15)       # m : hauteur de bordillo
-PRECISION   = 0.01   # m : grille d'accrochage des coordonnées
-CELDA       = _cfg('CELDA', 50.0)        # m : découpe des faces avant triangulation
-GRUPO       = 100.0  # m : regroupement des faces en objets (limite le nb d'objets Rhino)
-AREA_MIN    = 0.5    # m2 : fragments plus petits -> fusionnés dans relleno
-# Emprises : mêmes règles que le LOD1 (metadata_edificios_lod1)
+UMBRAL_MDT  = _cfg('UMBRAL_MDT', 5.0)    # m : desvío respecto a la mediana -> píxel corregido
+VENTANA_MDT = _cfg('VENTANA_MDT', 21)    # px (1 m) : ventana de la mediana
+SIMPLIFICAR = _cfg('SIMPLIFICAR', 0.25)  # m : simplificación de cobertura
+PASO_INT    = _cfg('PASO_INT', 10.0)     # m : malla de puntos interiores
+MARGEN_INT  = 1.0    # m : distancia mínima de los puntos interiores a la frontera
+H_BORD      = _cfg('H_BORD', 0.15)       # m : altura de bordillo
+PRECISION   = 0.01   # m : malla de ajuste de las coordenadas
+CELDA       = _cfg('CELDA', 50.0)        # m : recorte de las caras antes de triangular
+GRUPO       = 100.0  # m : agrupación de las caras en objetos (limita el nº de objetos Rhino)
+AREA_MIN    = 0.5    # m2 : fragmentos más pequeños -> fusionados en relleno
+# Huellas : mismas reglas que el LOD1 (metadata_edificios_lod1)
 TOL_HUELLA  = 0.10
 AREA_MIN_HUELLA = 3.0
 
 PRIORIDAD = ['adoquinado', 'acera', 'isleta', 'vado', 'calzada']
 NIVEL = {'calzada': 0.0, 'adoquinado': 0.0, 'vado': 0.0,
          'acera': H_BORD, 'isleta': H_BORD, 'relleno': H_BORD}
-# relleno / bordillo : valeurs provisoires (topo : 0,20 / 0,92 ; bordillo = hormigón)
+# relleno / bordillo : valores provisionales (topo : 0,20 / 0,92 ; bordillo = hormigón)
 MATERIAL_EXTRA = {'relleno':  {'material': 'suelo', 'albedo': 0.20, 'emisividad': 0.92},
                   'bordillo': {'material': 'hormigon', 'albedo': 0.30, 'emisividad': 0.92}}
 # ============================================================================
@@ -93,7 +96,7 @@ def log(t=''):
     print(t); LOG.append(str(t))
 
 def partes(g):
-    """Explose une géométrie en liste de Polygon valides."""
+    """Descompone una geometría en una lista de Polygon válidos."""
     if g is None or g.is_empty:
         return []
     if isinstance(g, Polygon):
@@ -105,7 +108,7 @@ def partes(g):
         return out
     return []
 
-# ------------------------------------------------------------ 1. MDT nettoyé
+# ------------------------------------------------------------- 1. MDT limpio
 with rasterio.open(MDT_TIF) as src:
     Z = src.read(1).astype('float64')
     perfil = src.profile.copy()
@@ -128,7 +131,7 @@ with rasterio.open(MDT_OUT, 'w', **perfil) as dst:
 
 inv = ~TR
 def cota(x, y):
-    """Bilinéaire sur le MDT nettoyé (centres de pixel)."""
+    """Bilineal sobre el MDT limpio (centros de píxel)."""
     c, r = inv * (x, y)
     c -= 0.5; r -= 0.5
     c0 = int(math.floor(c)); r0 = int(math.floor(r))
@@ -138,7 +141,7 @@ def cota(x, y):
     z10, z11 = Zl[r0 + 1, c0], Zl[r0 + 1, c0 + 1]
     return float((z00 * (1 - fc) + z01 * fc) * (1 - fr) + (z10 * (1 - fc) + z11 * fc) * fr)
 
-# ------------------------------------------------ 2. partition exclusive
+# ------------------------------------------------ 2. partición exclusiva
 MARCO = box(*BBOX_CONTEXTO)
 ANALISIS = box(*BBOX_ANALISIS)
 
@@ -159,11 +162,11 @@ por_clase = defaultdict(list)
 props_clase = {}
 for f in vi['features']:
     pr = f['properties']; cl = pr['clase']
-    # le GeoJSON viario porte des Z : on travaille strictement en 2D
+    # el GeoJSON del viario lleva Z : se trabaja estrictamente en 2D
     por_clase[cl].append(shapely.make_valid(shapely.force_2d(shape(f['geometry']))))
     props_clase.setdefault(cl, {k: pr.get(k) for k in ('capa', 'material', 'albedo', 'emisividad')})
 
-GEOM = {}                 # clase -> géométrie exclusive
+GEOM = {}                 # clase -> geometría exclusiva
 ocupado = EDIF
 for cl in PRIORIDAD:
     g = shapely.set_precision(unary_union(por_clase.get(cl, [])), PRECISION)
@@ -174,11 +177,11 @@ GEOM['relleno'] = MARCO.difference(ocupado)
 for cl in PRIORIDAD + ['relleno']:
     log('  %-11s %9.0f m2' % (cl, GEOM[cl].area))
 
-# ------------------------------------------------ 3. noeuds communs
+# ------------------------------------------------- 3. nodos comunes
 lineas = [MARCO.exterior] + [EDIF.boundary]
-# Grille de découpe : chaque face <= CELDA x CELDA m. Les lignes de grille sont
-# nodées avec le reste, donc les points de coupe sont partagés entre voisins.
-# Evite les faces géantes (calzada de 56 ha) sur lesquelles `triangle` échoue.
+# Malla de recorte : cada cara <= CELDA x CELDA m. Las líneas de la malla se
+# nodan con el resto, así que los puntos de corte se comparten entre vecinas.
+# Evita las caras gigantes (calzada de 56 ha) en las que `triangle` falla.
 x0, y0, x1, y1 = BBOX_CONTEXTO
 for gx in np.arange(math.ceil(x0 / CELDA) * CELDA, x1, CELDA):
     lineas.append(shapely.LineString([(gx, y0), (gx, y1)]))
@@ -187,13 +190,13 @@ for gy in np.arange(math.ceil(y0 / CELDA) * CELDA, y1, CELDA):
 for cl in PRIORIDAD + ['relleno']:
     if not GEOM[cl].is_empty:
         lineas.append(GEOM[cl].boundary)
-red = unary_union(lineas)                       # noding : coupe à chaque croisement
+red = unary_union(lineas)                       # noding : corta en cada cruce
 caras = [p for p in polygonize(red) if p.area > 1e-4]
 log('Caras polygonizadas : %d' % len(caras))
-# Simplification de COUVERTURE : les arêtes communes sont simplifiées une seule
-# fois, les noeuds (jonctions, croisements de grille) sont conservés.
-# Le Catastro/T03 porte un sommet tous les 2 à 4 m : c'est lui qui gonfle le
-# nombre de faces, pas le relief.
+# Simplificación de COBERTURA : las aristas comunes se simplifican una sola
+# vez, y los nodos (uniones, cruces de la malla) se conservan.
+# El Catastro/T03 lleva un vértice cada 2 a 4 m : es él quien infla el número
+# de caras, no el relieve.
 if SIMPLIFICAR:
     n0 = sum(len(p.exterior.coords) + sum(len(r.coords) for r in p.interiors) for p in caras)
     caras = list(shapely.coverage_simplify(np.array(caras, dtype=object), SIMPLIFICAR,
@@ -202,7 +205,7 @@ if SIMPLIFICAR:
     n1 = sum(len(p.exterior.coords) + sum(len(r.coords) for r in p.interiors) for p in caras)
     log('Simplificación de cobertura %.2f : %d -> %d vértices de borde' % (SIMPLIFICAR, n0, n1))
 
-# classe de chaque face par point représentatif
+# clase de cada cara por punto representativo
 arbol_cl = []
 for cl in ['edif'] + PRIORIDAD:
     g = EDIF if cl == 'edif' else GEOM[cl]
@@ -213,7 +216,7 @@ def clase_de(face):
     pt = face.representative_point()
     idx = tree.query(pt, predicate='within')
     cls = [arbol_cl[i][1] for i in idx]
-    for cl in ['edif'] + PRIORIDAD:     # priorité en cas de contact
+    for cl in ['edif'] + PRIORIDAD:     # prioridad en caso de contacto
         if cl in cls:
             return cl
     return 'relleno'
@@ -228,9 +231,9 @@ for p in caras:
     CARAS.append((shapely.geometry.polygon.orient(p, 1.0), cl))
 log('Caras de suelo : %d | %s' % (len(CARAS), dict(Counter(c for _, c in CARAS))))
 
-# ------------------------------------------------ 4. triangulation
+# ------------------------------------------------ 4. triangulación
 def clave(x, y):
-    return (float(x), float(y))   # coordonnées exactes du réseau nodé
+    return (float(x), float(y))   # coordenadas exactas de la red nodada
 
 def puntos_interiores(face):
     if face.area < 4 * PASO_INT * PASO_INT:
@@ -249,7 +252,7 @@ def puntos_interiores(face):
     return list(zip(gx.ravel()[dentro], gy.ravel()[dentro]))
 
 def triangular(face):
-    """Retourne (liste xy, liste triangles). Aucun point ajouté sur les bords."""
+    """Devuelve (lista xy, lista de triángulos). Ningún punto añadido en los bordes."""
     idx = {}; V = []; S = []
     def add(x, y):
         k = clave(x, y)
@@ -279,7 +282,7 @@ def triangular(face):
             return V, t['triangles'].tolist()
     except Exception:
         pass
-    # repli : Delaunay contrainte de shapely, sans point intérieur ni point ajouté
+    # respaldo : Delaunay restringida de shapely, sin punto interior ni punto añadido
     ESTAD['repli'] += 1
     tris = shapely.constrained_delaunay_triangles(face)
     out = []
@@ -306,7 +309,7 @@ def z_de(xy):
 
 OBJ = []
 grupos = defaultdict(lambda: {'v': [], 'f': [], 'area': 0.0})
-aristas = defaultdict(list)     # arête non orientée -> [(nivel, sens a->b, id_obj)]
+aristas = defaultdict(list)     # arista no orientada -> [(nivel, sentido a->b, id_obj)]
 n_err = 0
 for i, (face, cl) in enumerate(CARAS):
     try:
@@ -322,8 +325,8 @@ for i, (face, cl) in enumerate(CARAS):
         s = area2(V[a], V[b], V[c])
         if abs(s) < 1e-8:
             continue
-        f3.append([a, b, c] if s > 0 else [a, c, b])     # normale vers +Z
-    # arêtes de frontière, dans le sens de l'anneau orienté (intérieur à gauche)
+        f3.append([a, b, c] if s > 0 else [a, c, b])     # normal hacia +Z
+    # aristas de frontera, en el sentido del anillo orientado (interior a la izquierda)
     for an in [face.exterior] + list(face.interiors):
         cs = [clave(x, y) for x, y in list(an.coords)]
         for p, q in zip(cs[:-1], cs[1:]):
@@ -377,14 +380,14 @@ for k, lst in aristas.items():
         continue
     alto, sentido = (n1, s1) if n1 > n2 else (n2, s2)
     bajo = min(n1, n2)
-    p, q = sentido                      # intérieur de la face haute à gauche
+    p, q = sentido                      # interior de la cara alta a la izquierda
     P, Q = p, q
     zp, zq = z_de(P), z_de(Q)
     m = muros[celda(p)]
     b = len(m['v'])
     m['v'] += [[P[0], P[1], round(zp + bajo, 3)], [Q[0], Q[1], round(zq + bajo, 3)],
                [Q[0], Q[1], round(zq + alto, 3)], [P[0], P[1], round(zp + alto, 3)]]
-    # normale vers la droite = vers la face basse
+    # normal hacia la derecha = hacia la cara baja
     m['f'] += [[b, b + 1, b + 2], [b, b + 2, b + 3]]
     m['long'] += math.hypot(Q[0] - P[0], Q[1] - P[1])
 
@@ -401,7 +404,7 @@ for (cx, cy), m in sorted(muros.items()):
                          'emisividad': pr['emisividad'], 'altura_m': H_BORD,
                          'longitud_m': round(m['long'], 1), 'en_analisis': bool(en)}})
 
-# ------------------------------------------------ 6. contrôle + export
+# -------------------------------------------- 6. control + exportación
 log('')
 log('=== CONTROL DE CALIDAD ===')
 log('Caras no trianguladas : %d | repli Delaunay shapely : %d | triángulos perdidos : %d'
@@ -421,7 +424,7 @@ log('Caras por clase   : %s' % dict(nf))
 log('Caras totales : %d (todas triangulares)' % sum(nf.values()))
 zs = [v[2] for o in OBJ for v in o['v']]
 log('Z : %.2f – %.2f m' % (min(zs), max(zs)))
-# écart au MDT brut aux sommets du sol (hors niveaux)
+# desvío respecto al MDT bruto en los vértices del suelo (sin contar los niveles)
 dz = []
 for k, z in cache_z.items():
     c, r = inv * (k[0], k[1])

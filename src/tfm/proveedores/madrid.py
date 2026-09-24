@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-madrid.py — catalogue des sources pour Madrid.
+madrid.py — catálogo de las fuentes para Madrid.
 
-Une ville = un module de ce dossier. Pour ajouter Barcelone, il faudra écrire
-`barcelona.py` avec le même contrat : FUENTES + verificar() + descargar().
-Les URLs proviennent du cuaderno Maqueta_Lavapies_v1.ipynb, vérifiées le 08/09/2026.
+Una ciudad = un módulo de esta carpeta. Para añadir Barcelona, habrá que
+escribir `barcelona.py` con el mismo contrato : FUENTES + verificar() +
+descargar().
+Las URL proceden del cuaderno Maqueta_Lavapies_v1.ipynb, verificadas el 08/09/2026.
 
-Codes de source du TFM : [MAD-01] Multipatch · [MAD-03] MDS 2023 ·
+Códigos de fuente del TFM : [MAD-01] Multipatch · [MAD-03] MDS 2023 ·
 [MAD-07] T03 Viario · [MAD-10] MDT · [CAT-03] Catastro INSPIRE ATOM.
 """
 
@@ -24,15 +25,15 @@ WCS_MDT = ['https://servpub.madrid.es/georaster/ELEVACIONES/MDT2023_COG/ows',
            'https://servpub.madrid.es/georaster/ELEVACIONES/MDT2019_COG/ows']
 URL_CATASTRO = ('https://www.catastro.hacienda.gob.es/INSPIRE/buildings/%s/'
                 '%s-MADRID/A.ES.SDGC.BU.%s.zip')
-# Limites administratives : sert a deduire les districts a partir de la bbox,
-# pour que la configuration d'une zone se reduise a EAP + bbox. EPSG:25830.
+# Limites administrativos : sirven para deducir los distritos a partir de la
+# bbox, de modo que configurar una zona se reduzca a EAP + bbox. EPSG:25830.
 URL_DISTRITOS = GEOPORTAL + 'LIMITES_ADMINISTRATIVOS/Distritos/Distritos.zip'
-# Page du jeu de donnees, pour le remede en cas d'echec du telechargement :
+# Ficha del conjunto de datos, para el remedio si falla la descarga :
 # https://geoportal.madrid.es/IDEAM_WBGEOPORTAL/dataset.iam?id=541f4ef6-762b-11e9-861d-ecb1d753f6e8
 
 
 def fuentes(cfg, rutas):
-    """Liste des fichiers d'entrée attendus, avec leur remède en cas d'absence."""
+    """Lista de los ficheros de entrada esperados, con su remedio si faltan."""
     cod = cfg.get('cod_municipio', '28900')
     F = [
         {'clave': 'mdt', 'ruta': rutas.fuentes + '/MDT/mdt_%s.tif' % cfg['zona'],
@@ -79,8 +80,8 @@ def fuentes(cfg, rutas):
                      'se omite.' % rutas.fuentes)},
         # Un EPW sirve para toda la ciudad : basta con que haya UNO en la carpeta.
         # `cfg['epw']` es sólo una preferencia, no una obligación.
-        # On cherche dans tout FUENTES : l'ERA5 du TFM est a la racine, les TMYx
-        # dans EPW/. Peu importe ou il est, du moment qu'il y en a un.
+        # Se busca en todo FUENTES : el ERA5 del TFM está en la raíz, los TMYx
+        # en EPW/. Da igual dónde esté, mientras haya uno.
         {'clave': 'epw', 'ruta': rutas.fuentes, 'carpeta': True,
          'patron': '*.epw', 'url': None, 'auto': False,
          'remedio': ('Dejar un fichero .epw en `%s/EPW/` (subcarpetas incluidas). '
@@ -103,10 +104,10 @@ def fuentes(cfg, rutas):
 
 
 def existe(f):
-    """Présence d'une source.
+    """Presencia de una fuente.
 
-    `patron` : il suffit qu'un fichier correspondant existe quelque part sous le
-    dossier — un EPW vaut pour toute la ville, quel que soit son nom.
+    `patron` : basta con que exista un fichero correspondiente en cualquier
+    punto de la carpeta — un EPW vale para toda la ciudad, sea cual sea su nombre.
     """
     if f.get('patron'):
         import glob
@@ -117,7 +118,7 @@ def existe(f):
 
 
 def epw_de(cfg, rutas):
-    """Chemin de l'EPW à utiliser : celui du JSON s'il est là, sinon le premier."""
+    """Ruta del EPW a usar : el del JSON si está, si no el primero."""
     import glob
     encontrados = sorted(glob.glob(rutas.fuentes + '/**/*.epw', recursive=True))
     if not encontrados:
@@ -130,14 +131,14 @@ def epw_de(cfg, rutas):
 
 
 def descargar(url, destino, timeout=1800, esperado=None):
-    """Téléchargement en flux vers un .part, renommé à la fin.
+    """Descarga en flujo hacia un .part, renombrado al final.
 
-    Une coupure laisse le .part : la fois suivante recommence au lieu de
-    travailler sur un fichier tronqué.
+    Un corte deja el .part : la vez siguiente se vuelve a empezar en lugar de
+    trabajar sobre un fichero truncado.
 
-    `esperado` : 'zip' verifie la signature du fichier. Sans ce controle, une
-    page d'erreur HTML renvoyee en 200 est enregistree comme si c'etait
-    l'archive demandee (constate le 18/09 sur les Multipatch).
+    `esperado` : 'zip' verifica la firma del fichero. Sin ese control, una
+    página de error HTML devuelta con un 200 se guarda como si fuera el
+    archivo pedido (constatado el 18/09 con los Multipatch).
     """
     os.makedirs(os.path.dirname(destino), exist_ok=True)
     tmp = destino + '.part'
@@ -161,7 +162,7 @@ def descargar(url, destino, timeout=1800, esperado=None):
     return destino
 
 
-# --------------------------------------------------------------- districts
+# --------------------------------------------------------------- distritos
 def _sin_acentos(t):
     import unicodedata
     return ''.join(c for c in unicodedata.normalize('NFD', t)
@@ -169,10 +170,10 @@ def _sin_acentos(t):
 
 
 def candidatos_multipatch(codigo, nombre):
-    """Graphies possibles du nom de fichier Multipatch d'un district.
+    """Grafías posibles del nombre de fichero Multipatch de un distrito.
 
-    Observe sur le Drive : `01.CENTRO_3D`, `02.ARGANZUELA_3D`. Le Geoportal
-    n'expose pas de regle : on essaie, et ce qui echoue part dans l'informe.
+    Observado en el Drive : `01.CENTRO_3D`, `02.ARGANZUELA_3D`. El Geoportal
+    no expone ninguna regla : se prueba, y lo que falla va al informe.
     """
     n = _sin_acentos(nombre).strip().replace(' ', '_')
     salida = []
@@ -185,9 +186,9 @@ def candidatos_multipatch(codigo, nombre):
 
 
 def distritos_en_bbox(bbox, rutas):
-    """Districts dont la geometrie touche la bbox (EPSG:25830).
+    """Distritos cuya geometría toca la bbox (EPSG:25830).
 
-    Retourne [(codigo, nombre)]. Demande la couche Distritos deja telechargee.
+    Devuelve [(codigo, nombre)]. Exige la capa Distritos ya descargada.
     """
     import glob
     import geopandas as gpd
@@ -202,7 +203,7 @@ def distritos_en_bbox(bbox, rutas):
         gdf = gdf.to_crs(epsg=25830)
     marco = _box(*bbox)
     sel = gdf[gdf.intersects(marco)]
-    # Les noms de colonnes varient selon la edicion de la capa.
+    # Los nombres de columna varían según la edición de la capa.
     col_cod = next((c for c in gdf.columns
                     if c.upper() in ('CODDISTRIT', 'COD_DIS', 'CODIGO', 'NUMERO',
                                      'COD_DISTRI', 'DISTRITO')), None)
@@ -222,10 +223,10 @@ def distritos_en_bbox(bbox, rutas):
 
 
 def descargar_multipatch(codigo, nombre, destino):
-    """Essaie les graphies jusqu'a ce qu'une reponde AVEC un vrai ZIP.
+    """Prueba las grafías hasta que una responda CON un ZIP de verdad.
 
-    Controle de sortie : il doit y avoir un .shp apres extraction. Sinon on
-    nettoie et on leve, plutot que de laisser croire que le district est la.
+    Control de salida : tiene que haber un .shp tras la extracción. Si no, se
+    limpia y se lanza el error, en vez de dejar creer que el distrito está.
     """
     import glob
     import zipfile

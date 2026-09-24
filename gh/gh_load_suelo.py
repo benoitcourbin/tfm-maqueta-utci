@@ -1,40 +1,56 @@
 # -*- coding: utf-8 -*-
 """
 gh_load_suelo.py — GHPython (Rhino 8 / Python 3, ScriptEditor)
-TFM UTCI Lavapies — chargement de suelo_lavapies_mesh.json
-(viario + relleno + bordillos, généré par maqueta_suelo_lavapies.py)
+TFM UTCI Lavapies — carga de suelo_lavapies_mesh.json
+(viario + relleno + bordillos, generado por maqueta_suelo_lavapies.py)
 
-Remplace, pour la simulation, les composants Topo_py ET Calles_py.
+Sustituye, para la simulacion, los componentes Topo_py Y Calles_py.
 
-ENTREES DU COMPOSANT : 2 seulement
-    path  (Item, str)  chemin vers suelo_lavapies_mesh.json (COPIE LOCALE, pas G:\)
-    eap   (Item)       Earth Anchor Point : texte Heron, point lon/lat ou point UTM
+ENTRADAS DEL COMPONENTE : 2 solamente
+    path  (Item, str)  ruta hacia suelo_lavapies_mesh.json (COPIA LOCAL, no G:\)
+    eap   (Item)       Earth Anchor Point : texto Heron, punto lon/lat o punto UTM
 
-SORTIES : mesh (List) · keys (Tree) · values (Tree) · albedo (List)
+SALIDAS : mesh (List) · keys (Tree) · values (Tree) · albedo (List)
           suelo (Item) · info (str)
-    mesh / keys / values : un objet par branche -> EleFront (meme structure
-                           que edificios et viario).
-    albedo : aligne sur mesh -> contexte Ladybug.
-    suelo  : UNE malla jointe des surfaces horizontales (sans bordillos),
-             a brancher sur l'entree `mesh` de Drape_CurvesOnMesh.
+    mesh / keys / values : un objeto por rama -> EleFront (misma estructura
+                           que edificios y viario).
+    albedo : alineado con mesh -> contexto Ladybug.
+    suelo  : UNA malla unida de las superficies horizontales (sin bordillos),
+             a conectar en la entrada `mesh` de Drape_CurvesOnMesh.
 
-Le fichier est deja propre : triangles uniquement, sommets partages entre
-classes, niveaux (chaussee 0 / trottoir +0,15 m) integres a la generation.
-Donc : pas de reduction, pas de decalage par classe.
+El fichero ya esta limpio : solo triangulos, vertices compartidos entre
+clases, niveles (calzada 0 / acera +0,15 m) integrados en la generacion.
+Por tanto : sin reduccion, sin desplazamiento por clase.
 
 API Rhino : Mesh.Vertices.Add / Faces.AddFace / Vertices.CombineIdentical /
 Faces.CullDegenerateFaces / Mesh.Append / Normals.Clear /
 FaceNormals.ComputeFaceNormals / Compact [SOURCE: GH-01]
-Geometrie : [SOURCE: MAD-07] T03_VIARIO · cotes : [SOURCE: MAD-10] MDT nettoye
+Geometria : [SOURCE: MAD-07] T03_VIARIO · cotas : [SOURCE: MAD-10] MDT limpiado
 """
 
-# ============================ REGLAGES ======================================
-ACTIVO      = True   # False : ne charge rien, la geometrie bakee reste en place.
-LIMPIAR     = True   # soudure des sommets identiques + faces degenerees.
-SOLO_AMBITO = False  # True : ne garde que attr['en_analisis'] = True (Ladybug).
-BORDILLOS   = True   # False : ignore les objets 'bordillo'.
-Z_REF       = 0.0    # cote a retrancher a Z. 0 = altitude absolue conservee.
+# ============================ AJUSTES =======================================
+ACTIVO      = True   # False : no carga nada, la geometria bakeada sigue en su sitio.
+LIMPIAR     = True   # soldadura de vertices identicos + caras degeneradas.
+SOLO_AMBITO = False  # True : solo conserva attr['en_analisis'] = True (Ladybug).
+BORDILLOS   = True   # False : ignora los objetos 'bordillo'.
+Z_REF       = 0.0    # cota a restar de Z. 0 = altitud absoluta conservada.
 # ============================================================================
+
+# --------------------------- CLAVES RETENIDAS -------------------------------
+# Lista blanca de atributos escritos en el .3dm. [] = todas.
+# Lo que no esta aqui sigue en el CSV de la capa, unible por el id.
+# Se conservan las claves que PILOTAN algo en Grasshopper: v5 lee las capas
+# con Reference by Layer, que devuelve geometria Y atributos. Sin ellas no
+# se puede agrupar por epoca (albedo de fachada) ni por pavimento.
+# Motivo: cada clave x objeto es una escritura de user text; 9 296 objetos x
+# 23 claves tumbaban Rhino (trampa §7.10).
+CLAVES = [
+    'id',
+    'clase',
+    'material',
+]
+# ----------------------------------------------------------------------------
+
 
 import json, os, re, math
 import Rhino.Geometry as rg
@@ -54,7 +70,7 @@ def aviso(t):
 
 
 def latlon_a_utm30(lat, lon):
-    """Transverse Mercator zone 30N, GRS80 (EPSG:25830)."""
+    """Transverse Mercator zona 30N, GRS80 (EPSG:25830)."""
     a, f = 6378137.0, 1.0 / 298.257222101
     e2 = f * (2 - f); ep2 = e2 / (1 - e2)
     k0, lon0, FE = 0.9996, math.radians(-3.0), 500000.0
@@ -80,16 +96,16 @@ def resolver_eap(obj):
         lat = re.search(r'Lat\w*\s*[:=]\s*(-?\d+\.?\d*)', obj, re.I)
         if lon and lat:
             e, n = latlon_a_utm30(float(lat.group(1)), float(lon.group(1)))
-            linea('EAP (texte Heron) -> UTM %.2f %.2f' % (e, n)); return e, n
-        aviso('EAP texte non interpretable : %s' % obj); return None
+            linea('EAP (texto Heron) -> UTM %.2f %.2f' % (e, n)); return e, n
+        aviso('EAP en texto no interpretable : %s' % obj); return None
     try:
         x, y = float(obj.X), float(obj.Y)
     except Exception:
-        aviso('type EAP non supporte : %s' % type(obj)); return None
+        aviso('tipo de EAP no admitido : %s' % type(obj)); return None
     if abs(x) <= 180.0 and abs(y) <= 90.0:
         e, n = latlon_a_utm30(y, x)
-        linea('EAP (point lon/lat) -> UTM %.2f %.2f' % (e, n)); return e, n
-    linea('EAP (point UTM) %.2f %.2f' % (x, y)); return x, y
+        linea('EAP (punto lon/lat) -> UTM %.2f %.2f' % (e, n)); return e, n
+    linea('EAP (punto UTM) %.2f %.2f' % (x, y)); return x, y
 
 
 mesh, albedo, _clases = [], [], []
@@ -102,16 +118,21 @@ caras_ini = caras_fin = 0
 if not ACTIVO:
     linea('ACTIVO = False : nada cargado. La geometria bakeada sigue en las capas.')
     _paths = []
+elif not _paths:
+    aviso('el puerto path esta vacio : nada que cargar. '
+          'Conectar la salida correspondiente de gh_cache.py '
+          '(y comprobar su salida info).')
+
 
 _eap_utm = resolver_eap(_eap) if ACTIVO else None
 
 for ruta in _paths:
     if not ruta or not os.path.exists(str(ruta)):
-        aviso('chemin inexistant : %s' % ruta); continue
+        aviso('ruta inexistente : %s' % ruta); continue
     with open(str(ruta), 'r', encoding='utf-8') as fh:
         datos = json.load(fh)
     if 'objetos' not in datos:
-        aviso('%s : cle "objetos" absente' % os.path.basename(str(ruta))); continue
+        aviso('%s : falta la clave "objetos"' % os.path.basename(str(ruta))); continue
 
     meta = datos.get('meta', {})
     dx = float(meta.get('dx', 0.0) or 0.0)
@@ -122,14 +143,14 @@ for ruta in _paths:
     else:
         ox = oy = oz = 0.0
         if ACTIVO:
-            aviso('sans EAP : geometrie laissee en UTM absolu.')
+            aviso('sin EAP : geometria dejada en UTM absoluto.')
 
     objetos = datos.get('objetos', [])
-    linea('%s : %d objets | tipo=%s | cotas=%s | bordillo=%s m'
+    linea('%s : %d objetos | tipo=%s | cotas=%s | bordillo=%s m'
           % (os.path.basename(str(ruta)), len(objetos), meta.get('tipo'),
              meta.get('cotas'), meta.get('h_bordillo_m')))
     if meta.get('tipo') != 'suelo':
-        aviso('%s n\'est pas un fichier suelo (tipo=%s)' % (os.path.basename(str(ruta)), meta.get('tipo')))
+        aviso('%s no es un fichero suelo (tipo=%s)' % (os.path.basename(str(ruta)), meta.get('tipo')))
 
     for o in objetos:
         attr = dict(o.get('attr') or {})
@@ -138,7 +159,7 @@ for ruta in _paths:
         if not BORDILLOS and (o.get('clase') == 'bordillo'):
             n_bord += 1; continue
 
-        # construction
+        # construccion
         m = rg.Mesh(); va = m.Vertices
         for v in o['v']:
             va.Add(float(v[0]) - ox, float(v[1]) - oy, float(v[2]) - oz)
@@ -148,7 +169,7 @@ for ruta in _paths:
             elif len(f) == 4: fa.AddFace(f[0], f[1], f[2], f[3])
         caras_ini += m.Faces.Count
 
-        # cause A : nettoyage topologique, sans effet sur la geometrie visible
+        # causa A : limpieza topologica, sin efecto en la geometria visible
         if LIMPIAR:
             try: m.Vertices.CombineIdentical(True, True)
             except Exception: pass
@@ -161,7 +182,7 @@ for ruta in _paths:
 
         clase = o.get('clase') or attr.get('clase') or '?'
 
-        # surfaces facettees, pas de surfaces courbes : normales de face
+        # superficies facetadas, sin superficies curvas : normales de cara
         m.Normals.Clear()
         m.FaceNormals.ComputeFaceNormals()
         m.Compact()
@@ -175,6 +196,8 @@ for ruta in _paths:
         attr.setdefault('clase', clase)
         attr.setdefault('capa', o.get('capa'))
         for k in sorted(attr.keys()):
+            if CLAVES and k not in CLAVES:
+                continue
             keys.Add(str(k), rama)
             values.Add('' if attr[k] is None else str(attr[k]), rama)
         mesh.append(m)
