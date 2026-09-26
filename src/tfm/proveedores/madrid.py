@@ -8,7 +8,8 @@ descargar().
 Las URL proceden del cuaderno Maqueta_Lavapies_v1.ipynb, verificadas el 08/09/2026.
 
 Códigos de fuente del TFM : [MAD-01] Multipatch · [MAD-03] MDS 2023 ·
-[MAD-07] T03 Viario · [MAD-10] MDT · [CAT-03] Catastro INSPIRE ATOM.
+[MAD-07] T03 Viario · [MAD-10] MDT · [MAD-12] Arbolado ·
+[CAT-03] Catastro INSPIRE ATOM.
 """
 
 import os
@@ -28,6 +29,10 @@ URL_CATASTRO = ('https://www.catastro.hacienda.gob.es/INSPIRE/buildings/%s/'
 # Limites administrativos : sirven para deducir los distritos a partir de la
 # bbox, de modo que configurar una zona se reduzca a EAP + bbox. EPSG:25830.
 URL_DISTRITOS = GEOPORTAL + 'LIMITES_ADMINISTRATIVOS/Distritos/Distritos.zip'
+# Arbolado [MAD-12]: datos.madrid.es, conjunto 300761-0 «Arbolado en parques y
+# zonas verdes de Madrid (detalle)», recurso CSV 2026 (71,4 MB, verificado el 24/09/2026).
+URL_ARBOLADO = ('https://datos.madrid.es/dataset/300761-0-arbolado-especies/resource/'
+                '300761-8-arbolado-especies/download/300761-8-arbolado-especies.csv')
 # Ficha del conjunto de datos, para el remedio si falla la descarga :
 # https://geoportal.madrid.es/IDEAM_WBGEOPORTAL/dataset.iam?id=541f4ef6-762b-11e9-861d-ecb1d753f6e8
 
@@ -68,16 +73,14 @@ def fuentes(cfg, rutas):
                      'sin él hay que escribir "distritos" a mano en el JSON de la '
                      'zona. Ficha: geoportal.madrid.es, «Distritos municipales de '
                      'Madrid». [MAD-11]' % (URL_DISTRITOS, rutas.fuentes))},
-        {'clave': 'arbolado', 'ruta': rutas.fuentes + '/Arbolado',
-         'carpeta': True, 'url': None, 'auto': False,
-         'remedio': ('Inventario municipal de arbolado, DE TODA LA CIUDAD, en '
-                     '`%s/Arbolado/` (CSV o GeoJSON). La cadena lo recorta a la '
-                     'bbox de cada zona: se descarga una sola vez. Origen: portal '
-                     'de datos abiertos del Ayuntamiento (datos.madrid.es), '
-                     'conjunto de arbolado. Columnas necesarias: coordenadas '
-                     '(X/Y en EPSG:25830 o longitud/latitud), altura_total_m, '
-                     'h_inicio_follaje_m, forma_copa. Sin él, la capa arbolado '
-                     'se omite.' % rutas.fuentes)},
+        {'clave': 'arbolado', 'ruta': rutas.fuentes + '/Arbolado/raw',
+         'carpeta': True, 'url': URL_ARBOLADO, 'auto': True,
+         'remedio': ('Inventario municipal de arbolado DE TODA LA CIUDAD (CSV), una sola '
+                     'vez para todas las zonas. Descargar %s y dejarlo en '
+                     '`%s/Arbolado/raw/`. `pasos/arbolado.py` lo recorta a la bbox y '
+                     'calcula las columnas de la capa. Columnas del bruto: X, Y, '
+                     'ALTURA_TOTAL, PERIMETRO, CODIGO_ESPECIE, NBRE_BARRIO. [MAD-12]'
+                     % (URL_ARBOLADO, rutas.fuentes))},
         # Un EPW sirve para toda la ciudad : basta con que haya UNO en la carpeta.
         # `cfg['epw']` es sólo una preferencia, no una obligación.
         # Se busca en todo FUENTES : el ERA5 del TFM está en la raíz, los TMYx

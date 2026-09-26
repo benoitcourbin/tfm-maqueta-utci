@@ -1,0 +1,56 @@
+{
+  "zona": "lavapies",
+  "crs": "EPSG:25830",
+  "crs_geografico": "EPSG:4326",
+  "centro": {
+    "lat": 40.4077,
+    "lon": -3.705
+  },
+  "centro_proyectado": {
+    "x": 440178.0,
+    "y": 4473249.0,
+    "nota": "centro geometrico del raster; a 2,75 m del lat/lon pedido por el redondeo del recorte en QGIS"
+  },
+  "radio_m": 600,
+  "dsm_extension": [
+    439477.0,
+    4472548.0,
+    440879.0,
+    4473950.0
+  ],
+  "radio_red_m": 600,
+  "radio_raster_m": 701.0,
+  "dsm_shape": [
+    701,
+    701
+  ],
+  "dsm_res_m": 2.0,
+  "aviso_extension": "dsm_extension NO es centro +- radio_m. El raster se amplio 101 m por lado para evitar el efecto borde. Usa dsm_extension tal cual; si necesitas un radio, usa radio_raster_m.",
+  "tiempo": {
+    "horas_utc": [
+      6,
+      8,
+      10,
+      12,
+      14
+    ],
+    "meteo_en": "UTC",
+    "utc_offset_solweig": 1,
+    "aviso": "El fichero meteorologico esta en UTC, pero la ejecucion de SOLWEIG se lanzo con UTC offset = 1. La geometria solar de cada raster corresponde por tanto a (hora del fichero - 1 h) UTC. Ver la nota al equipo.",
+    "dia_referencia_doy": 221
+  },
+  "utci_escala": [
+    30.0,
+    46.0
+  ],
+  "unidad_analisis": "calle fisica",
+  "n_calles": 1427,
+  "n_aristas_origen": 2854,
+  "version_notebook": "v12.17",
+  "ficheros": {
+    "geojson_qgis": "Calles_Lavapies.geojson",
+    "geojson_3d": "Calles_Lavapies_UNICAS.geojson",
+    "utci_horario": "GH_UTCI_Horario.csv",
+    "mapeo_segmento": "GH_Mapeo_Segmento_a_Calle.csv"
+  }
+}

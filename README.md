@@ -49,13 +49,15 @@ en los Secretos de Colab con el nombre `GITHUB_TOKEN`.
 ## Estructura
 
 ```
-config/zonas/<zona>.json      bbox, EAP, distritos, umbrales   ← lo único a editar
-src/tfm/rutas.py              arborescencia del Drive
+config/zonas/<zona>.json      centro, distritos, umbrales; bbox y EAP derivados
+config/zonas/ml/              fichas de zona exportadas por el cuaderno ML
+config/especies_arbolado.json forma de copa y ratio de follaje por especie (hipótesis)
+src/tfm/rutas.py              arborescencia del Drive; deriva bbox, origen_local y EAP
 src/tfm/estado.py             pasos, manifiesto, informe de incidencias
 src/tfm/proveedores/madrid.py catálogo de fuentes de una ciudad
 src/tfm/pasos/capas_nb.py     ejecuta las capas del cuaderno verificado
 src/tfm/pasos/suelo.py        suelo unificado (viario + relleno + bordillos)
-src/tfm/pasos/arbolado.py     arbolado
+src/tfm/pasos/arbolado.py     inventario municipal → arboles_<zona>_clean.csv
 run_maqueta.py                orquestador
 exportar_resultados.py        Ladybug → Drive (original + CSV)
 gh/                           componentes GHPython (Rhino 8)
@@ -65,10 +67,17 @@ colab/publicar_github.ipynb   publicación Drive → GitHub
 
 ## Nueva zona
 
-1. Copiar `config/zonas/lavapies.json` a `<zona>.json` y ajustar `bbox`,
-   `origen_local`, `eap`, `distritos`.
-   La bbox de Lavapiés es el cuadrado de 1 200 m centrado en el punto que usa el
-   cuaderno ML (40.4077, −3.7050, radio 600 m).
+1. Copiar `config/zonas/lavapies.json` a `<zona>.json`. Ajustar `zona`,
+   `centro {lat, lon}`, `radio_m` y `distritos`. Si el equipo ML ha exportado
+   la ficha de zona, dejarla en `config/zonas/ml/` y escribir su nombre en
+   `zona_ml`. **Borrar** `bbox`, `origen_local` y `eap`: `rutas.py` los deriva.
+   - bbox = `dsm_extension` de la ficha ML, la extensión exacta de los rásters
+     de SOLWEIG (en Lavapiés, 1 402 m de lado: **no** es centro ± 600 m);
+     sin ficha, cuadrado de lado 2 × `radio_m` centrado en `centro`;
+   - EAP = `centro`; `origen_local` = su proyección en EPSG:25830.
+
+   Un valor presente en el json prevalece sobre el derivado: Lavapiés conserva
+   sus valores explícitos mientras el run v5 sea la referencia.
 2. `python run_maqueta.py --zona <zona>`.
 3. En Grasshopper, escribir el nombre de la zona en el componente `gh_cache`.
 
@@ -93,7 +102,8 @@ El bake de las capas se hace con EleFront.
 
 ## Fuentes de datos
 
-Madrid: Geoportal (Multipatch 3D, T03 Viario, MDT, MDS) y Catastro INSPIRE.
+Madrid: Geoportal (Multipatch 3D, T03 Viario, MDT, MDS), Catastro INSPIRE e
+inventario de arbolado de datos.madrid.es (conjunto 300761-0).
 El catálogo con las URLs exactas está en `src/tfm/proveedores/madrid.py`.
 
 ## Licencia

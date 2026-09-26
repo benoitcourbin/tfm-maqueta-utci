@@ -1,121 +1,174 @@
 # -*- coding: utf-8 -*-
 """
-arbolado.py — recorta el inventario municipal de arbolado a la bbox de la zona.
+arbolado.py — inventario municipal de arbolado → FUENTES/Arbolado/arboles_<zona>_clean.csv
 
-El inventario se descarga UNA VEZ para toda la ciudad, en
-`FUENTES/Arbolado/`. Este paso extrae de él los árboles de la zona y escribe
-`FUENTES/Arbolado/arboles_<zona>_clean.csv`, que es lo que la capa `arbolado`
-del cuaderno espera. Se acabaron los ficheros preparados a mano por barrio.
+Origen [MAD-12]: datos.madrid.es, conjunto 300761-0 «Arbolado en parques y zonas
+verdes de Madrid (detalle)». `proveedores/madrid.py` lo descarga UNA VEZ, para toda
+la ciudad, en `FUENTES/Arbolado/raw/`.
 
-Formatos aceptados: CSV (separador , o ;) y GeoJSON.
-Coordenadas: columnas X/Y en EPSG:25830, o longitud/latitud en grados, o la
-geometría del GeoJSON.
+Pasos (los del cuaderno «Arbolado Lavapiés — Parser BBox + Exportación GeoJSON»,
+02/06/2026, pasados a módulo):
+  1. leer el bruto (CSV , ; o tabulador · decimal con coma);
+  2. recortar a bbox_contexto con X/Y en EPSG:25830;
+  3. conservar solo las columnas necesarias y calcular:
+       diametro_tronco_cm = PERIMETRO / π
+       altura_total_m     = ALTURA_TOTAL
+       forma_copa, h_inicio_follaje_m = altura × ratio   ← tabla por especie
+       longitud, latitud  (pyproj)
+  4. escribir el CSV que lee la capa `arbolado` del cuaderno de la maqueta.
+
+La tabla por especie (`config/especies_arbolado.json`) es una HIPÓTESIS de
+modelización: forma de copa y ratio de inicio de follaje no vienen del inventario.
+
+Reglas:
+  - Solo lee `raw/`: nunca vuelve a leer sus propias salidas.
+  - No reescribe un `_clean.csv` válido salvo `forzar=True`.
+  - Si falta una columna del bruto, se detiene con la lista de columnas leídas.
 """
 
 import os
 import glob
+import json
+import math
 
-COLS_X = ('x', 'coord_x', 'utm_x', 'este', 'x_utm', 'coordenada_x')
-COLS_Y = ('y', 'coord_y', 'utm_y', 'norte', 'y_utm', 'coordenada_y')
-COLS_LON = ('longitud', 'lon', 'lng', 'long', 'longitude')
-COLS_LAT = ('latitud', 'lat', 'latitude')
-# Lo que la capa `arbolado` del cuaderno lee después.
+# Columnas del bruto, verificadas en 300761-0-arbolado-especies (2025).
+# Se buscan sin distinguir mayúsculas.
+BRUTO = {'x': 'X', 'y': 'Y', 'altura': 'ALTURA_TOTAL', 'perimetro': 'PERIMETRO',
+         'especie': 'CODIGO_ESPECIE', 'barrio': 'NBRE_BARRIO'}
+OPCIONALES = ('barrio',)
+
+# Lo que escribe este paso, en este orden (cabecera del inventario del 18/09).
+COLS_SALIDA = ['CODIGO_ESPECIE', 'nombre_especie', 'forma_copa', 'diametro_tronco_cm',
+               'altura_total_m', 'h_inicio_follaje_m', 'X', 'Y', 'longitud', 'latitud',
+               'NBRE_BARRIO']
+# Lo que la capa `arbolado` del cuaderno exige.
 COLS_MINIMAS = ('altura_total_m', 'h_inicio_follaje_m', 'forma_copa')
 
 
-def _columna(df, candidatas):
-    baja = {c.lower(): c for c in df.columns}
-    for c in candidatas:
-        if c in baja:
-            return baja[c]
-    return None
+def _tabla_especies():
+    ruta = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__))))), 'config', 'especies_arbolado.json')
+    with open(ruta, encoding='utf-8') as f:
+        return json.load(f)
 
 
-def _cargar(ruta):
+def _separador(ruta, codif):
+    with open(ruta, encoding=codif, errors='strict') as f:
+        cab = f.readline()
+    return max((';', ',', '\t'), key=cab.count)
+
+
+def _leer_bruto(ruta):
+    """Lee solo las columnas necesarias del inventario de la ciudad."""
     import pandas as pd
-    if ruta.lower().endswith(('.geojson', '.json')):
-        import geopandas as gpd
-        g = gpd.read_file(ruta)
-        if g.crs is not None and g.crs.to_epsg() != 25830:
-            g = g.to_crs(epsg=25830)
-        df = pd.DataFrame(g.drop(columns='geometry'))
-        df['X'] = g.geometry.x.values
-        df['Y'] = g.geometry.y.values
-        return df
-    for sep in (',', ';'):
-        try:
-            df = pd.read_csv(ruta, sep=sep, low_memory=False)
-            if df.shape[1] > 1:
-                return df
-        except Exception:
-            continue
-    raise RuntimeError('no se puede leer %s' % os.path.basename(ruta))
-
-
-def _xy(df):
-    """Devuelve (serie_x, serie_y) en EPSG:25830, o lanza una excepción."""
-    cx, cy = _columna(df, COLS_X), _columna(df, COLS_Y)
-    if cx and cy:
-        import pandas as pd
-        x = pd.to_numeric(df[cx], errors='coerce')
-        y = pd.to_numeric(df[cy], errors='coerce')
-        # Grados en una columna llamada X: no nos fiamos del nombre.
-        if x.abs().max() <= 180 and y.abs().max() <= 90:
-            cx = cy = None
-        else:
-            return x, y
-    clon, clat = _columna(df, COLS_LON), _columna(df, COLS_LAT)
-    if clon and clat:
-        import pandas as pd
-        from pyproj import Transformer
-        tr = Transformer.from_crs('EPSG:4326', 'EPSG:25830', always_xy=True)
-        lon = pd.to_numeric(df[clon], errors='coerce')
-        lat = pd.to_numeric(df[clat], errors='coerce')
-        x, y = tr.transform(lon.values, lat.values)
-        return pd.Series(x, index=df.index), pd.Series(y, index=df.index)
-    raise RuntimeError('sin columnas de coordenadas reconocibles : %s'
-                       % list(df.columns)[:15])
-
-
-def recortar(cfg, rutas, log=print):
-    """Escribe arboles_<zona>_clean.csv a partir del inventario de la ciudad."""
-    zona = cfg['zona']
-    carpeta = rutas.fuentes + '/Arbolado'
-    destino = carpeta + '/arboles_%s_clean.csv' % zona
-
-    candidatos = [f for f in glob.glob(carpeta + '/*')
-                  if f.lower().endswith(('.csv', '.geojson', '.json'))
-                  and os.path.basename(f) != os.path.basename(destino)]
-    if not candidatos:
-        raise RuntimeError('no hay ningún inventario en %s' % carpeta)
-    # El fichero más grande es el de la ciudad; los recortes son más pequeños.
-    candidatos.sort(key=os.path.getsize, reverse=True)
-
-    x0, y0, x1, y1 = cfg['bbox_contexto']
     ultimo = None
-    for ruta in candidatos:
+    for codif in ('utf-8-sig', 'latin-1'):
         try:
-            df = _cargar(ruta)
-            x, y = _xy(df)
-        except Exception as ex:
-            ultimo = '%s : %s' % (os.path.basename(ruta), ex)
+            sep = _separador(ruta, codif)
+            cab = pd.read_csv(ruta, sep=sep, nrows=0, encoding=codif).columns
+        except (UnicodeDecodeError, pd.errors.ParserError) as e:
+            ultimo = e
             continue
-        dentro = (x >= x0) & (x <= x1) & (y >= y0) & (y <= y1)
-        n = int(dentro.sum())
-        log('   %-40s %7d registros | %5d en la bbox'
-            % (os.path.basename(ruta), len(df), n))
-        if n == 0:
-            ultimo = '%s : ningún árbol en la bbox' % os.path.basename(ruta)
-            continue
-        fuera = [c for c in COLS_MINIMAS if _columna(df, (c,)) is None]
-        if fuera:
-            log('   ⚠️ faltan columnas %s : la capa arbolado usará sus valores '
-                'por defecto' % ', '.join(fuera))
-        sal = df[dentro.values].copy()
-        sal['X'] = x[dentro.values].values
-        sal['Y'] = y[dentro.values].values
-        sal.to_csv(destino, index=False)
-        log('   -> %s (%d árboles, origen %s)'
-            % (os.path.basename(destino), n, os.path.basename(ruta)))
+        mapa = {c.strip().lower(): c for c in cab}
+        cols, faltan = {}, []
+        for clave, nombre in BRUTO.items():
+            real = mapa.get(nombre.lower())
+            if real is None and clave not in OPCIONALES:
+                faltan.append(nombre)
+            elif real is not None:
+                cols[clave] = real
+        if faltan:
+            raise RuntimeError(
+                '%s: faltan las columnas %s. Columnas leídas: %s'
+                % (os.path.basename(ruta), faltan, list(cab)[:25]))
+        df = pd.read_csv(ruta, sep=sep, encoding=codif, dtype=str,
+                         usecols=list(cols.values()), low_memory=False)
+        return df.rename(columns={v: k for k, v in cols.items()})
+    raise RuntimeError('no se puede leer %s (%s)' % (os.path.basename(ruta), ultimo))
+
+
+def _num(serie):
+    """Texto con decimal español (coma) → float; lo ilegible queda en NaN."""
+    import pandas as pd
+    return pd.to_numeric(serie.str.strip().str.replace(',', '.', regex=False),
+                         errors='coerce')
+
+
+def _valido(ruta):
+    """¿El _clean.csv existente tiene lo que la capa exige?"""
+    import pandas as pd
+    try:
+        cols = pd.read_csv(ruta, nrows=0).columns
+    except Exception:
+        return False
+    return all(c in cols for c in COLS_MINIMAS)
+
+
+def elegir_bruto(cfg, rutas):
+    """Fichero bruto a usar: el de cfg['arbolado_bruto'] si está, si no el más reciente."""
+    carpeta = rutas.fuentes + '/Arbolado/raw'
+    brutos = [f for f in glob.glob(carpeta + '/*.csv') if not f.endswith('.part')]
+    if not brutos:
+        raise RuntimeError('no hay inventario en %s' % carpeta)
+    pref = cfg.get('arbolado_bruto')
+    for f in brutos:
+        if pref and os.path.basename(f) == pref:
+            return f
+    return max(brutos, key=os.path.getmtime)
+
+
+def recortar(cfg, rutas, forzar=False, log=print):
+    """Escribe arboles_<zona>_clean.csv desde el inventario bruto de la ciudad."""
+    import numpy as np
+    from pyproj import Transformer
+
+    destino = rutas.fuentes + '/Arbolado/arboles_%s_clean.csv' % cfg['zona']
+    if os.path.isfile(destino) and _valido(destino) and not forzar:
+        log('   %s ya existe y es válido: no se reescribe (forzar=True para '
+            'regenerarlo)' % os.path.basename(destino))
         return destino
-    raise RuntimeError('ningún inventario utilizable (%s)' % ultimo)
+
+    bruto = elegir_bruto(cfg, rutas)
+    df = _leer_bruto(bruto)
+    x, y = _num(df['x']), _num(df['y'])
+    x0, y0, x1, y1 = cfg['bbox_contexto']
+    dentro = (x >= x0) & (x <= x1) & (y >= y0) & (y <= y1)
+    n = int(dentro.sum())
+    log('   %s: %d árboles en la ciudad | %d en la bbox de contexto'
+        % (os.path.basename(bruto), len(df), n))
+    if n == 0:
+        raise RuntimeError('ningún árbol de %s en la bbox de %s'
+                           % (os.path.basename(bruto), cfg['zona']))
+
+    d = df[dentro].copy()
+    d['X'], d['Y'] = x[dentro].values, y[dentro].values
+    tabla = _tabla_especies()
+    esp, defecto = tabla['especies'], tabla['_por_defecto']
+    cod = d['especie'].fillna('').str.strip()
+    fila = [esp.get(c, defecto) for c in cod]
+    sin_tabla = int(sum(1 for c in cod if c not in esp))
+
+    altura = _num(d['altura'])
+    ratio = np.array([f['ratio_follaje'] for f in fila], dtype=float)
+    sal = {
+        'CODIGO_ESPECIE': cod.values,
+        'nombre_especie': [f['nombre'] for f in fila],
+        'forma_copa': [f['forma_copa'] for f in fila],
+        'diametro_tronco_cm': (_num(d['perimetro']) / math.pi).round(1).values,
+        'altura_total_m': altura.round(1).values,
+        'h_inicio_follaje_m': (altura.round(1) * ratio).round(1).values,
+        'X': d['X'].values,
+        'Y': d['Y'].values,
+    }
+    tr = Transformer.from_crs(cfg.get('crs', 'EPSG:25830'), 'EPSG:4326', always_xy=True)
+    lon, lat = tr.transform(d['X'].values, d['Y'].values)
+    sal['longitud'], sal['latitud'] = np.round(lon, 7), np.round(lat, 7)
+    sal['NBRE_BARRIO'] = d['barrio'].values if 'barrio' in d else None
+
+    import pandas as pd
+    out = pd.DataFrame(sal)[COLS_SALIDA]
+    os.makedirs(os.path.dirname(destino), exist_ok=True)
+    out.to_csv(destino, index=False, encoding='utf-8')
+    log('   -> %s (%d árboles; %d con especie fuera de la tabla → «%s» por defecto)'
+        % (os.path.basename(destino), len(out), sin_tabla, defecto['forma_copa']))
+    return destino
